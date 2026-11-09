@@ -441,6 +441,7 @@ if(BUILD_TESTS)
       device/DdaAllReduceFabricLL128PeerParTests.cpp
       device/DdaVecElementAddTests.cpp
       device/DdaLL128PollWireTests.cpp
+      device/NanSentinelEscapeTests.cpp
       device/DdaLL128ArchGeometryTests.cpp
       device/DdaReduceScatterFabricLL128PeerParTests.cpp
       device/TestTDM.cpp

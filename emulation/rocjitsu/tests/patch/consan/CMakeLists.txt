@@ -266,6 +266,22 @@ if(TARGET consan_original_fixtures)
         consan_native_shape_artifact_fixture
         DEPENDS ${_native_shape_artifact}/facts.bin
     )
+    set(_trace_artifact ${CMAKE_CURRENT_BINARY_DIR}/prepared/multi-trace)
+    add_custom_command(
+        OUTPUT ${_trace_artifact}/facts.bin
+        BYPRODUCTS ${_trace_artifact}/prepared.hsaco ${_trace_artifact}/ready
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${_trace_artifact}
+        COMMAND
+            $<TARGET_FILE:rj_consan_prepare> ${_fixture_dir}/multi-entry.hsaco
+            gfx1250 ${_trace_artifact} --profile execution-trace --entry mk_a
+            --entry mk_b
+        DEPENDS rj_consan_prepare ${_fixture_dir}/multi-entry.hsaco
+        VERBATIM
+    )
+    add_custom_target(
+        consan_trace_artifact_fixture
+        DEPENDS ${_trace_artifact}/facts.bin
+    )
     add_executable(
         consan_image_test
         ${PROJECT_SOURCE_DIR}/tests/code/consan/artifact_test.cpp
@@ -316,6 +332,7 @@ if(RJ_BUILD_CONSAN_RUNTIME AND TARGET consan_original_fixtures)
         consan_multi_artifact_fixture
         consan_application_lds_artifacts
         consan_native_shape_artifact_fixture
+        consan_trace_artifact_fixture
     )
     target_compile_definitions(
         consan_hsa_plugin_test
@@ -329,6 +346,7 @@ if(RJ_BUILD_CONSAN_RUNTIME AND TARGET consan_original_fixtures)
             CONSAN_APPLICATION_LOOP_ARTIFACT="${_application_loop_artifact}"
             CONSAN_NATIVE_SHAPE_ORIGINAL_FIXTURE="${_fixture_dir}/multi-entry-abi.hsaco"
             CONSAN_NATIVE_SHAPE_ARTIFACT_FIXTURE="${_native_shape_artifact}"
+            CONSAN_MULTI_TRACE_ARTIFACT_FIXTURE="${_trace_artifact}"
     )
     rj_add_gtest_tests(consan_hsa_plugin_test)
 endif()
@@ -726,6 +744,36 @@ if(TARGET consan_multi_entry_runner AND TARGET rj_consan_analyze)
                 ${PROJECT_SOURCE_DIR}/configs/gfx1250_mi455x.json --root
                 ${RJ_CONSAN_TEST_ARTIFACT_ROOT} --source ${PROJECT_SOURCE_DIR}
                 ${_profile_options}
+        )
+        rj_test_runtime_dir_env(_runtime ${_test})
+        set_tests_properties(
+            ${_test}
+            PROPERTIES
+                TIMEOUT 240
+                LABELS "consan;simulator;required-consan"
+                ENVIRONMENT "${_runtime}"
+        )
+    endforeach()
+endif()
+
+if(TARGET consan_multi_entry_runner AND TARGET rj_consan_analyze)
+    foreach(_groups IN ITEMS 1 16 512)
+        set(_test ConSanExecutionTraceSim.Groups${_groups})
+        add_test(
+            NAME ${_test}
+            COMMAND
+                ${Python3_EXECUTABLE} -B
+                ${CMAKE_CURRENT_SOURCE_DIR}/consan_execution_trace_e2e.py
+                --prepare $<TARGET_FILE:rj_consan_prepare> --runner
+                $<TARGET_FILE:consan_multi_entry_runner> --inspect
+                $<TARGET_FILE:consan_capture_inspect> --analyze
+                $<TARGET_FILE:rj_consan_analyze> --plugin
+                $<TARGET_FILE:hsa_consan_testable> --launcher
+                $<TARGET_FILE:rocjitsu_bin> --fixture
+                ${_fixture_dir}/multi-entry.hsaco --config
+                ${PROJECT_SOURCE_DIR}/configs/gfx1250_mi455x.json --root
+                ${RJ_CONSAN_TEST_ARTIFACT_ROOT} --source ${PROJECT_SOURCE_DIR}
+                --workgroups ${_groups}
         )
         rj_test_runtime_dir_env(_runtime ${_test})
         set_tests_properties(

@@ -67,7 +67,7 @@ RuntimeStatus DispatchLifecycle::snapshot(const std::function<CopyResult(std::sp
   if (copied.bytes != report_bytes_)
     return RuntimeStatus::ShortCopy;
   envelope_.report = std::move(bytes);
-  envelope_.completion = kCompletionVisibleForwarded;
+  envelope_.completion = completion_evidence(facts_->scope);
   destination = {facts_, std::move(envelope_)};
   phase_ = Phase::Copied;
   return RuntimeStatus::Success;

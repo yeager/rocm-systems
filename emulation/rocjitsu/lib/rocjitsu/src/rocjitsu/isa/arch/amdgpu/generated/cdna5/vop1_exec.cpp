@@ -2097,8 +2097,7 @@ void VMovreldB32Vop1::execute_impl(amdgpu::Wavefront &wf) {
   if (!rel_dst_valid)
     return;
   Operand rel_dst(vdst.size_bits(), OperandType::OPR_VGPR, static_cast<int>(rel_dst_index));
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, src0);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, src0);
 }
 
 RJ_NOINLINE void VMovreldB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -2127,8 +2126,7 @@ RJ_NOINLINE void VMovreldB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
   if (!rel_dst_valid)
     return;
   Operand rel_dst(vdst.size_bits(), OperandType::OPR_VGPR, static_cast<int>(rel_dst_index));
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, src0);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, src0);
   dpp_write_mask_scope_.restore();
 }
 
@@ -2158,8 +2156,7 @@ void VMovrelsB32Vop1::execute_impl(amdgpu::Wavefront &wf) {
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, vdst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, vdst, rel_src);
 }
 
 RJ_NOINLINE void VMovrelsB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -2194,8 +2191,7 @@ RJ_NOINLINE void VMovrelsB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, vdst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, vdst, rel_src);
   dpp_write_mask_scope_.restore();
 }
 
@@ -2237,8 +2233,7 @@ void VMovrelsdB32Vop1::execute_impl(amdgpu::Wavefront &wf) {
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, rel_src);
 }
 
 RJ_NOINLINE void VMovrelsdB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -2285,8 +2280,7 @@ RJ_NOINLINE void VMovrelsdB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) 
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, rel_src);
   dpp_write_mask_scope_.restore();
 }
 
@@ -2328,8 +2322,7 @@ void VMovrelsd2B32Vop1::execute_impl(amdgpu::Wavefront &wf) {
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, rel_src);
 }
 
 RJ_NOINLINE void VMovrelsd2B32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -2376,8 +2369,7 @@ RJ_NOINLINE void VMovrelsd2B32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf)
     amdgpu::dpp::apply_dpp8(rel_src, dpp8_lane_sel_, dpp_fi_, rel_staged_src, wf);
   ScopedOperandDelegate rel_staged_src_binding(rel_src,
                                                rel_staged_src ? &*rel_staged_src : nullptr);
-  amdgpu::arith::execute_unary32(wf, rj_arith_v_mov_b32_w32, rj_arith_v_mov_b32_w64,
-                                 wf.cu().arithmetic_flags(), 0u, rel_dst, rel_src);
+  amdgpu::arith::execute_move32(*this, wf, rel_dst, rel_src);
   dpp_write_mask_scope_.restore();
 }
 

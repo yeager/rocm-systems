@@ -1423,6 +1423,7 @@ add_executable(
     patch/fault_injection/atomic_legacy_test.cpp
     patch/fault_injection/ordinary_acquire_test.cpp
     patch/fault_injection/ordinary_wrong_address_test.cpp
+    patch/fault_injection/cdna34_ordinary_wrong_address_test.cpp
 )
 target_include_directories(
     rocjitsu_fault_injection_tests
@@ -1478,6 +1479,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         patch/fault_injection/cdna_lds_cli_test.cpp
         patch/fault_injection/atomic_legacy_cli_test.cpp
         patch/fault_injection/ordinary_wrong_address_cli_test.cpp
+        patch/fault_injection/ordinary_legacy_cli_test.cpp
     )
     target_include_directories(
         rocjitsu_fault_mutation_cli_tests

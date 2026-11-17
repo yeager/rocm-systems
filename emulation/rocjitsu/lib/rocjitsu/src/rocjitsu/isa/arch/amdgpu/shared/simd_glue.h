@@ -105,7 +105,6 @@ enum class SimdFastPath : uint8_t {
   VOP3_LDEXP_RAW,
   VOP3_TERNARY_FP16,
   VOP3_TERNARY_RAW_FP,
-  VOP3_TERNARY_TRUE16_RAW_FP16,
   VOP_WORDS,
   VOP1_UNARY,
   VOP2_BINARY,
@@ -4505,10 +4504,6 @@ template <Vop3pDotHalfFormat Fmt, typename Inst>
   if (::rocjitsu::amdgpu::try_execute_binary_vop3_simd<uint32_t>(                                  \
           inst, wf, ::rocjitsu::amdgpu::vop3_float_operation<Fmt>(inst, wf, __VA_ARGS__)))         \
   return
-#define ROCJITSU_TRY_SIMD_VOP3_BINARY_TRUE16_RAW_FP16(Fmt, ...)                                    \
-  if (::rocjitsu::amdgpu::try_execute_binary_vop3_f16_simd<true, uint32_t>(                        \
-          inst, wf, ::rocjitsu::amdgpu::vop3_float_operation<Fmt>(inst, wf, __VA_ARGS__)))         \
-  return
 #if RJ_SIMD_BROKEN_NATIVE_64BIT_MASKS
 #define ROCJITSU_TRY_SIMD_VOP3_BINARY_RAW_FP64(Fmt, ...) static_cast<void>(inst)
 #else
@@ -4657,13 +4652,6 @@ template <Vop3pDotHalfFormat Fmt, typename Inst>
           inst, wf, ::rocjitsu::amdgpu::vop3_float_operation<Fmt>(inst, wf, __VA_ARGS__))) {       \
     ::rocjitsu::amdgpu::detail::record_simd_fast_path(                                             \
         ::rocjitsu::amdgpu::SimdFastPath::VOP3_TERNARY_RAW_FP);                                    \
-    return;                                                                                        \
-  }
-#define ROCJITSU_TRY_SIMD_VOP3_TERNARY_TRUE16_RAW_FP16(Fmt, ...)                                   \
-  if (::rocjitsu::amdgpu::try_execute_ternary_vop3_true16_simd<uint32_t>(                          \
-          inst, wf, ::rocjitsu::amdgpu::vop3_float_operation<Fmt>(inst, wf, __VA_ARGS__))) {       \
-    ::rocjitsu::amdgpu::detail::record_simd_fast_path(                                             \
-        ::rocjitsu::amdgpu::SimdFastPath::VOP3_TERNARY_TRUE16_RAW_FP16);                           \
     return;                                                                                        \
   }
 
@@ -4868,12 +4856,21 @@ template <Vop3pDotHalfFormat Fmt, typename Inst>
   if (::rocjitsu::amdgpu::try_execute_vop3p_mov_b32_simd(inst, wf))                                \
   return
 
+/// VOP3P integer dot-product probe. Args: (ElemBits, Signed) — e.g.
+/// (8, true) for v_dot4_i32_i8, (4, false) for v_dot8_u32_u4. Functorless.
+
 /// VOP3P v_dot2_f32_{f16,bf16} SIMD probe. Arg: the half-precision widening
 /// format (F16 or BF16) as a ::rocjitsu::amdgpu::Vop3pDotHalfFormat enumerator.
 #define ROCJITSU_TRY_SIMD_VOP3P_DOT_F16(Fmt)                                                       \
   if (::rocjitsu::amdgpu::try_execute_vop3p_dot_f16_simd<                                          \
           ::rocjitsu::amdgpu::Vop3pDotHalfFormat::Fmt>(inst, wf))                                  \
   return
+
+/// VOP3P mixed-sign integer dot probe (v_dot4_i32_iu8 / v_dot8_i32_iu4). Arg:
+/// ElemBits (8 or 4). Per-operand sign read at runtime from inst.neg.
+
+/// VOP2/VOP3 dst-accumulate integer dot probe (the "c" forms). Args:
+/// (ElemBits, Vop3) — e.g. (8, true) for v_dot4c_i32_i8_vop3.
 
 /// VOP2/VOP3 dst-accumulate f16 dot probe (v_dot2c_f32_f16). Arg: Vop3 bool.
 

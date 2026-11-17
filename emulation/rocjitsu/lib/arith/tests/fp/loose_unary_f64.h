@@ -24,7 +24,7 @@ namespace rocjitsu::arith::test {
 // modifiers, EXEC, aliasing, and untouched FP status. The caller supplies
 // the entry point and an independent scalar reference expression.
 template <int Lanes, typename Call, typename Reference>
-void check_loose_unary_f64(Call call, Reference reference, bool gfx12) {
+void check_loose_unary_f64(Call call, Reference reference, bool gfx12, bool accepts_exact = true) {
   static_assert(Lanes == 32 || Lanes == 64);
   using Mask = std::conditional_t<Lanes == 32, uint32_t, uint64_t>;
   using Registers = rocjitsu::arith::test::Registers<10, Lanes>;
@@ -70,6 +70,13 @@ void check_loose_unary_f64(Call call, Reference reference, bool gfx12) {
             int result = call(flags, exec_mask, mode, r.v + aliasing_offset, r.v, &fp_status);
             if (semantics == RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL) {
               EXPECT_EQ(result, RJ_ARITH_ERROR_UNSUPPORTED_FP_STATUS);
+              r.expect_preserved(input, 0, 0);
+              EXPECT_EQ(fp_status, 0x80000000U);
+              continue;
+            }
+            if (!accepts_exact &&
+                semantics == RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_NO_FP_STATUS) {
+              EXPECT_EQ(result, RJ_ARITH_ERROR_UNSUPPORTED_SEMANTICS);
               r.expect_preserved(input, 0, 0);
               EXPECT_EQ(fp_status, 0x80000000U);
               continue;

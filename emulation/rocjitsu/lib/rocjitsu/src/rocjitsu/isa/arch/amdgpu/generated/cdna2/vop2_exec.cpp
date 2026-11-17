@@ -9,6 +9,7 @@
 #include "rocjitsu/isa/arch/amdgpu/generated/shared/execute_shared.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/dpp_sdwa_ops.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/rj_arith_float_exec.h"
+#include "rocjitsu/isa/arch/amdgpu/shared/rj_arith_fma64_variants_exec.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/rj_arith_vector_exec.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/simd_glue.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/transcendental.h"
@@ -179,7 +180,7 @@ void VFmacF64Vop2::execute_impl(amdgpu::Wavefront &wf) {
     execute_modifier_impl(wf);
     return;
   }
-  amdgpu::execute_v_fmac_f64_vop2(*this, wf);
+  amdgpu::arith::execute_fmac64<true>(wf, 0, vdst, src0, vsrc1);
 }
 
 RJ_NOINLINE void VFmacF64Vop2::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -201,7 +202,7 @@ RJ_NOINLINE void VFmacF64Vop2::execute_modifier_impl(amdgpu::Wavefront &wf) {
   if (inst_.src0 == amdgpu::SRC_DPP)
     dpp_write_mask_scope_.bind(wf,
                                wf.exec() & dpp_plan_.row_bank_mask & dpp_plan_.source_write_mask);
-  amdgpu::execute_v_fmac_f64_vop2(*this, wf);
+  amdgpu::arith::execute_fmac64<true>(wf, 0, vdst, src0, vsrc1);
   dpp_write_mask_scope_.restore();
 }
 

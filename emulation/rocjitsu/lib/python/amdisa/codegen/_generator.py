@@ -18083,6 +18083,7 @@ class CodeGenerator:
                 if (
                     self.isa_spec.arch_name
                     in (
+                        'rdna1',
                         'rdna2',
                         'rdna3',
                         'rdna3_5',

@@ -18112,6 +18112,7 @@ class CodeGenerator:
                         'rdna3',
                         'rdna3_5',
                         'rdna4',
+                        'cdna2',
                         'cdna3',
                         'cdna4',
                         'cdna5',

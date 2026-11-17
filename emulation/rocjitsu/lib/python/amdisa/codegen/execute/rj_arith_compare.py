@@ -126,7 +126,17 @@ def gen_float_compare(ctx: ExecuteContext) -> str | None:
     dst, src = ctx.dst_ops, ctx.src_ops
     is_vop3, result_writer = ctx.is_vop3, ctx.result_writer
     if (
-        arch not in ('rdna2', 'rdna3', 'rdna3_5', 'rdna4', 'cdna3', 'cdna4', 'cdna5')
+        arch
+        not in (
+            'rdna2',
+            'rdna3',
+            'rdna3_5',
+            'rdna4',
+            'cdna2',
+            'cdna3',
+            'cdna4',
+            'cdna5',
+        )
         or mnemonic not in FLOAT_COMPARISONS
     ):
         return None

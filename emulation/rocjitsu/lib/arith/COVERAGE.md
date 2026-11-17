@@ -236,3 +236,11 @@ IEEE-dependent NaNs and FP status. The 30 gfx1150-specific arithmetic, selection
 rounding and conversion entry points do not advertise new empirical qualification;
 comparisons share the existing raw-bit predicates. Scalar operations have one
 SGPR value per operand, so there is no lane-vector SIMD backend to select.
+### gfx90a floating comparisons
+
+FP16/FP32/FP64 relational CMP/CMPX, including F/TRU, use the existing shared
+comparison APIs and scalar, AVX2 and AVX-512 backends. Compatibility carries
+raw ordering, guest input flushing and the existing absence of FP-status
+reporting; CLAMP does not add a classifier on this target. Mode 3 remains
+unsupported. The VM owns explicit SGPR/VCC and EXEC commits, including both
+mask writes for CMPX. This migration does not newly qualify a numerical model.

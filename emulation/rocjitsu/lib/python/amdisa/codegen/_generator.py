@@ -18394,6 +18394,9 @@ class CodeGenerator:
                     CDNA5_PACKED_TERNARY,
                     VECTOR32_NAMES,
                     CDNA_INTEGER_ALIASES,
+                    INTEGER_ARCHITECTURES,
+                    ACCUMULATOR_ARCHITECTURES,
+                    ACCUMULATOR_MOVES,
                     CARRY32_NAMES,
                     WIDE_INTEGER_NAMES,
                     INTEGER16_NAMES,
@@ -18514,6 +18517,10 @@ class CodeGenerator:
                         or i.name in INTEGER_DOT_NAMES
                         for i in all_insts
                     )
+                )
+                uses_vector_arith |= (
+                    self.isa_spec.arch_name in ACCUMULATOR_ARCHITECTURES
+                    and any(i.name in ACCUMULATOR_MOVES for i in all_insts)
                 )
                 uses_vector_arith |= self.isa_spec.arch_name in (
                     'cdna1',

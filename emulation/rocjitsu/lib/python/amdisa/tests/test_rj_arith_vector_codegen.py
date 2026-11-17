@@ -910,3 +910,19 @@ def test_older_integer_dot_generated_methods_have_no_legacy_route(arch):
             assert 'shared/rj_arith_vector_exec.h"' in text
             count += 1
     assert count > 0
+
+
+@pytest.mark.parametrize('arch', ['cdna1', 'cdna2', 'cdna3', 'cdna4'])
+def test_accumulator_transfers_keep_bank_resolution_in_operands(arch):
+    names = ['V_ACCVGPR_READ', 'V_ACCVGPR_WRITE']
+    if arch != 'cdna1':
+        names.append('V_ACCVGPR_MOV_B32')
+    for name in names:
+        body = gen_vector32(context(arch, name, ['d'], ['a'], True))
+        assert body == '  amdgpu::arith::execute_move32(*this, wf, d, a);'
+        assert gen_vector32(context('rdna3', name, ['d'], ['a'], True)) is None
+    if arch in ('cdna1', 'cdna2'):
+        assert (
+            gen_vector32(context(arch, 'V_AND_B32', ['d'], ['a', 'b'], False))
+            is not None
+        )

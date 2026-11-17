@@ -524,6 +524,7 @@ add_executable(
     older_integer_compare_test.cpp
     rj_arith_policy_test.cpp
     rj_arith_config_test.cpp
+    gfx90a_f64_mfma_test.cpp
     rj_arith_bridge_test.cpp
     gfx1251_compiled_kernel_test.cpp
     daemon_api_test.cpp
@@ -541,6 +542,8 @@ add_executable(
     numeric_encoding_regression_test.cpp
     older_conversion32_test.cpp
     older_conversion64_test.cpp
+    older_accumulator_transfer_test.cpp
+    older_integer_mfma_test.cpp
     cdna5_gfx1251_simulation_test.cpp
     cdna5_instruction_test.cpp
     cdna5_sdma_test.cpp
@@ -682,6 +685,7 @@ add_executable(
     packed_wmma_test.cpp
     rdna_wmma_i32_test.cpp
     rdna_swmmac_i32_test.cpp
+    gfx1150_wmma_test.cpp
     rdna_wmma_float_test.cpp
     rdna_swmmac_float_test.cpp
     atomic_semantics_and_decode_test.cpp

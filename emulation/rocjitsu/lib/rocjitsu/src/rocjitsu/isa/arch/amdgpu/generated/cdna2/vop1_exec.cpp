@@ -2515,7 +2515,7 @@ void VAccvgprMovB32Vop1::execute_impl(amdgpu::Wavefront &wf) {
     execute_modifier_impl(wf);
     return;
   }
-  amdgpu::execute_v_accvgpr_mov_b32_vop1(*this, wf);
+  amdgpu::arith::execute_move32(*this, wf, vdst, src0);
 }
 
 RJ_NOINLINE void VAccvgprMovB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
@@ -2536,7 +2536,7 @@ RJ_NOINLINE void VAccvgprMovB32Vop1::execute_modifier_impl(amdgpu::Wavefront &wf
   if (inst_.src0 == amdgpu::SRC_DPP)
     dpp_write_mask_scope_.bind(wf,
                                wf.exec() & dpp_plan_.row_bank_mask & dpp_plan_.source_write_mask);
-  amdgpu::execute_v_accvgpr_mov_b32_vop1(*this, wf);
+  amdgpu::arith::execute_move32(*this, wf, vdst, src0);
   dpp_write_mask_scope_.restore();
 }
 

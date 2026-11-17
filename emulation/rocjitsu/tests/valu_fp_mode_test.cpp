@@ -1298,6 +1298,9 @@ std::vector<ArithmeticCase> fma_mix_f32_cases() {
       cases.back().arith_dispatch = true;
     }
   }
+  for (auto &test : cases) {
+    test.arith_dispatch = true;
+  }
   return cases;
 }
 
@@ -1718,6 +1721,9 @@ std::vector<ArithmeticCase> fma_mix_half_cases() {
         }
       }
     }
+  }
+  for (auto &test : cases) {
+    test.arith_dispatch = true;
   }
   for (auto &test : cases) {
     test.arith_dispatch = true;
@@ -2491,6 +2497,9 @@ std::vector<ArithmeticCase> legacy_rounded_result_modifier_cases() {
         0xf0u);
     add("AddF16Div2NegativeMinNormalFlushInputsKeepOutputs", target.addition, 0x8400u, 0x0000u,
         0x8400u, 0xa0u);
+  }
+  for (auto &test : cases) {
+    test.arith_dispatch = true;
   }
   return cases;
 }

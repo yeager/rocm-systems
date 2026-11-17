@@ -390,8 +390,7 @@ void VCvtF32F16Vop1::execute_impl(amdgpu::Wavefront &wf) {
   flags |= uint64_t(wf.fp_round_mode_f32()) << 24;
   if (inst_.src0 == amdgpu::SRC_SDWA) {
     amdgpu::arith::execute_conversion16_sdwa<amdgpu::sdwa::ResultFormat::F32>(
-        *this, wf, rj_arith_v_cvt_f32_f16_w32_gfx942, rj_arith_v_cvt_f32_f16_w64_gfx942, flags,
-        vdst, src0);
+        *this, wf, rj_arith_v_cvt_f32_f16_w32, rj_arith_v_cvt_f32_f16_w64, flags, vdst, src0);
     return;
   }
   const uint64_t modifiers = 0u;
@@ -433,8 +432,7 @@ RJ_NOINLINE void VCvtF32F16Vop1::execute_modifier_impl(amdgpu::Wavefront &wf) {
   flags |= uint64_t(wf.fp_round_mode_f32()) << 24;
   if (inst_.src0 == amdgpu::SRC_SDWA) {
     amdgpu::arith::execute_conversion16_sdwa<amdgpu::sdwa::ResultFormat::F32>(
-        *this, wf, rj_arith_v_cvt_f32_f16_w32_gfx942, rj_arith_v_cvt_f32_f16_w64_gfx942, flags,
-        vdst, src0);
+        *this, wf, rj_arith_v_cvt_f32_f16_w32, rj_arith_v_cvt_f32_f16_w64, flags, vdst, src0);
     return;
   }
   const uint64_t modifiers = 0u;

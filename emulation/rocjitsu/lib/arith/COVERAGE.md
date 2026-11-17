@@ -236,3 +236,14 @@ IEEE-dependent NaNs and FP status. The 30 gfx1150-specific arithmetic, selection
 rounding and conversion entry points do not advertise new empirical qualification;
 comparisons share the existing raw-bit predicates. Scalar operations have one
 SGPR value per operand, so there is no lane-vector SIMD backend to select.
+## BF16 SDWA widening
+
+BF16-to-FP32 widening accepts `CVT_SDWA` for inherited output scaling and
+clamp, including normalization of tiny inputs before scaling. Scalar, AVX2 and
+AVX-512 share this model. Compatibility, Loose and allow-Loose support it; strict
+empirical modes reject this unqualified encoding policy. Ordinary widening
+retains its existing qualification. The VM stages inputs and places output bytes.
+
+Unsuffixed packed RTZ conversion also accepts `CVT_SDWA`. It finalizes already-
+rounded halves and applies inherited clamp without multiplying again; scalar,
+AVX2 and AVX-512 share the finalizer. The gfx12 API keeps rejecting this selector.

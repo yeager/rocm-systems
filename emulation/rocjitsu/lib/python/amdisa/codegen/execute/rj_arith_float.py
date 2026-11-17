@@ -586,7 +586,19 @@ def gen_packed_conversion(ctx: ExecuteContext) -> str | None:
     src = ctx.src_ops
     is_vop3 = ctx.is_vop3
     if (
-        arch not in ('rdna3', 'rdna4', 'cdna3', 'cdna4', 'cdna5')
+        arch
+        not in (
+            'cdna1',
+            'cdna2',
+            'rdna1',
+            'rdna2',
+            'rdna3_5',
+            'rdna3',
+            'rdna4',
+            'cdna3',
+            'cdna4',
+            'cdna5',
+        )
         or mnemonic not in PACKED_CONVERSION_NAMES
     ):
         return None
@@ -595,7 +607,18 @@ def gen_packed_conversion(ctx: ExecuteContext) -> str | None:
     # RDNA entries accept bit-exact semantics; CDNA entries stay loose-only until their
     # captures are reviewed.
     api = 'rj_arith_' + mnemonic.lower() + CONVERSION_ARCH_SUFFIX[arch]
-    lines = ['  uint64_t flags = wf.cu().arithmetic_flags();']
+    older_integer_pack = (
+        arch in ('rdna1', 'rdna2', 'rdna3_5') and mnemonic != 'V_CVT_PK_RTZ_F16_F32'
+    )
+    if older_integer_pack:
+        # These targets share the numeric model, without its RDNA3 qualification.
+        api = 'rj_arith_' + mnemonic.lower()
+    lines = (
+        ['  if (!wf.exec()) { return; }'] + inherited_half_qualification_guard(arch)
+        if older_integer_pack
+        else []
+    )
+    lines += ['  uint64_t flags = wf.cu().arithmetic_flags();']
     if mnemonic == 'V_CVT_PK_RTZ_F16_F32':
         lines += [
             '  if (!(wf.fp_denorm_mode_f32() & 1)) flags |= RJ_ARITH_FP_FLUSH_INPUT_DENORMALS;',
@@ -615,6 +638,15 @@ def gen_packed_conversion(ctx: ExecuteContext) -> str | None:
             terms += ['(uint64_t(inst_.omod) * RJ_ARITH_ALU_OMOD_2)']
         lines += ['  const uint64_t modifiers = ' + ' | '.join(terms) + ';']
         modifiers = 'modifiers'
+    if arch in ('rdna1', 'rdna2') and not is_vop3:
+        sdwa_api = 'rj_arith_' + mnemonic.lower()
+        lines += [
+            '  if (inst_.src0 == amdgpu::SRC_SDWA) {',
+            f'    amdgpu::arith::execute_packed_rtz_sdwa(*this, wf, {wave_api(sdwa_api, 32)}, {wave_api(sdwa_api, 64)},',
+            f'        flags, {dst[0]}, {src[0]}, {src[1]});',
+            '    return;',
+            '  }',
+        ]
     lines += [
         f'  amdgpu::arith::execute_float_pack(wf, {wave_api(api, 32)}, {wave_api(api, 64)},',
         f'      flags, {modifiers},',
@@ -719,19 +751,33 @@ def gen_conversion16(ctx: ExecuteContext) -> str | None:
     src = ctx.src_ops
     is_vop3 = ctx.is_vop3
     if (
-        arch not in ('rdna3', 'rdna4', 'cdna3', 'cdna4', 'cdna5')
+        arch
+        not in (
+            'cdna1',
+            'cdna2',
+            'rdna1',
+            'rdna2',
+            'rdna3_5',
+            'rdna3',
+            'rdna4',
+            'cdna3',
+            'cdna4',
+            'cdna5',
+        )
         or mnemonic not in CONVERSION16_NAMES
     ):
         return None
     if len(dst) != 1 or len(src) != 1:
         return None
     output, source = mnemonic.split('_')[-2:]
+    zero_extend_low = arch in ('cdna1', 'cdna2', 'cdna3', 'cdna4')
+    legacy_e32 = zero_extend_low or arch in ('rdna1', 'rdna2')
     api = 'rj_arith_' + mnemonic.lower() + CONVERSION_ARCH_SUFFIX[arch]
     lines = [
         '  uint64_t flags = wf.cu().arithmetic_flags();',
         '  if (wf.ieee_mode()) flags |= RJ_ARITH_FP_IEEE_MODE;',
     ]
-    if arch in ('rdna3', 'cdna3', 'cdna4') and output.startswith('F'):
+    if arch not in ('rdna4', 'cdna5') and output.startswith('F'):
         lines += ['  if (!wf.dx10_clamp()) flags |= RJ_ARITH_FP_DX10_CLAMP_OFF;']
     if output == 'F16':
         lines += ['  if (wf.fp16_ovfl()) flags |= RJ_ARITH_FP16_OVFL;']
@@ -744,21 +790,29 @@ def gen_conversion16(ctx: ExecuteContext) -> str | None:
     if output.startswith('F'):
         rounding = 'fp_round_mode_f32' if output == 'F32' else 'fp_round_mode_f16_f64'
         lines += [f'  flags |= uint64_t(wf.{rounding}()) << 24;']
-    if arch in ('cdna3', 'cdna4') and not is_vop3:
+    if legacy_e32 and not is_vop3:
         result_format = (
             'F16' if output == 'F16' else 'F32' if output == 'F32' else 'NONE'
+        )
+        # SDWA owns placement after conversion, so use the whole-result variant.
+        sdwa_api = (
+            'rj_arith_' + mnemonic.lower() + ('_gfx942' if output != 'F32' else '')
         )
         lines += [
             '  if (inst_.src0 == amdgpu::SRC_SDWA) {',
             f'    amdgpu::arith::execute_conversion16_sdwa<amdgpu::sdwa::ResultFormat::{result_format}>(*this, wf,',
-            f'        {wave_api(api, 32)}, {wave_api(api, 64)}, flags, {dst[0]}, {src[0]});',
+            f'        {wave_api(sdwa_api, 32)}, {wave_api(sdwa_api, 64)}, flags, {dst[0]}, {src[0]});',
             '    return;',
             '  }',
         ]
     terms = []
     source_operand, destination_operand = src[0], dst[0]
     if is_vop3:
-        lines += ['  const uint32_t opsel = amdgpu::vop3_opsel(inst_);']
+        # GFX10 ignores OPSEL here; CDNA VOP3 retains source and destination half selection.
+        selector = (
+            'amdgpu::vop3_opsel(inst_)' if arch not in ('rdna1', 'rdna2') else '0u'
+        )
+        lines += [f'  const uint32_t opsel = {selector};']
         terms += [
             '(uint64_t(inst_.omod) * RJ_ARITH_ALU_OMOD_2)',
             '(inst_.clamp ? RJ_ARITH_ALU_CLAMP : 0u)',
@@ -772,7 +826,7 @@ def gen_conversion16(ctx: ExecuteContext) -> str | None:
                 '((inst_.abs & 1) ? RJ_ARITH_ALU_ABS_A : 0u)',
                 '((inst_.neg & 1) ? RJ_ARITH_ALU_NEG_A : 0u)',
             ]
-    elif arch not in ('cdna3', 'cdna4'):
+    elif not legacy_e32:
         # E32 true16 selectors combine the register and half. Expose the word
         # to SIMD access and pass half selection separately; staged operands
         # already contain the selected half and must remain untouched.
@@ -797,7 +851,7 @@ def gen_conversion16(ctx: ExecuteContext) -> str | None:
     destination_bytes = (
         '0xF' if output == 'F32' else '(modifiers & RJ_ARITH_ALU_HIGH_D) ? 0xC : 0x3'
     )
-    if arch in ('cdna3', 'cdna4') and output != 'F32':
+    if zero_extend_low and output != 'F32':
         destination_bytes = '(modifiers & RJ_ARITH_ALU_HIGH_D) ? 0xC : 0xF'
     lines += [
         f'  const uint8_t source_bytes = {source_bytes};',
@@ -1377,7 +1431,19 @@ def gen_byte_nibble_conversion(ctx: ExecuteContext) -> str | None:
     src = ctx.src_ops
     is_vop3 = ctx.is_vop3
     if (
-        arch not in ('rdna3', 'rdna4', 'cdna3', 'cdna4', 'cdna5')
+        arch
+        not in (
+            'cdna1',
+            'cdna2',
+            'rdna1',
+            'rdna2',
+            'rdna3_5',
+            'rdna3',
+            'rdna4',
+            'cdna3',
+            'cdna4',
+            'cdna5',
+        )
         or mnemonic not in BYTE_NIBBLE_CONVERSION_NAMES
     ):
         return None
@@ -1395,7 +1461,7 @@ def gen_byte_nibble_conversion(ctx: ExecuteContext) -> str | None:
         else '0u'
     )
     sdwa = []
-    if arch in ('cdna3', 'cdna4') and not is_vop3:
+    if arch in ('cdna1', 'cdna2', 'rdna1', 'rdna2', 'cdna3', 'cdna4') and not is_vop3:
         sdwa = [
             '  if (inst_.src0 == amdgpu::SRC_SDWA) {',
             f'    amdgpu::arith::execute_byte_conversion_sdwa(*this, wf, {wave_api(api, 32)}, {wave_api(api, 64)},',
@@ -2222,7 +2288,7 @@ def gen_float_binary16(ctx: ExecuteContext) -> str | None:
     ):
         return None
     api = 'rj_arith_' + mnemonic.lower()
-    if mnemonic in GFX10_BINARY_F16:
+    if mnemonic in BINARY_ARITHMETIC_F16 - {'V_LDEXP_F16'}:
         # RDNA3 owns the unsuffixed F16 ADD/SUB/SUBREV/MUL entries and RDNA4 the _gfx12 entries;
         # both accept bit-exact semantics. CDNA3/CDNA4, gfx1250 and RDNA2 call loose-only entries
         # until their captures are reviewed per instruction.

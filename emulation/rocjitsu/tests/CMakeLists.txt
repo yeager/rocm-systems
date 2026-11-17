@@ -541,6 +541,7 @@ add_executable(
     numeric_encoding_regression_test.cpp
     older_conversion32_test.cpp
     older_conversion64_test.cpp
+    older_conversion16_test.cpp
     cdna5_gfx1251_simulation_test.cpp
     cdna5_instruction_test.cpp
     cdna5_sdma_test.cpp
@@ -608,6 +609,8 @@ add_executable(
     comparison_test.cpp
     gfx1150_compare_test.cpp
     conversion_test.cpp
+    older_packed_conversion_test.cpp
+    older_byte_conversion_test.cpp
     denormal_test.cpp
     floating_operation_test.cpp
     input_denormal_test.cpp

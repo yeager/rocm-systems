@@ -19,9 +19,10 @@ constexpr uint64_t kEnvelopeBytes = 64;
 constexpr uint64_t kImageFixedBytes = 144;
 constexpr uint64_t kEntryFixedBytes = 124;
 constexpr uint64_t kNativeCodeRangeBytes = 24;
-constexpr uint64_t kManifestFixedBytes = 64 + 244;
+constexpr uint64_t kManifestFixedBytes = 64 + 248;
 constexpr uint64_t kSiteBytes = 68;
 constexpr uint64_t kBarrierBytes = 56;
+constexpr uint64_t kBoundaryBytes = 36;
 
 bool add_extent(uint64_t &total, uint64_t amount, uint64_t limit) {
   if (total > limit || amount > limit - total)
@@ -37,7 +38,7 @@ Digest selection_profile_digest(std::span<const EntryKey> selected_keys, ScopeKi
   std::array<uint8_t, 4> scope_bytes{};
   wire::write_u32(scope_bytes, 0, static_cast<uint32_t>(scope));
   hash.update(scope_bytes.data(), scope_bytes.size());
-  const Digest options = mvp_options_digest();
+  const Digest options = profile_options_digest(scope);
   hash.update(options.data(), options.size());
   std::array<uint8_t, 4> count{};
   wire::write_u32(count, 0, static_cast<uint32_t>(selected_keys.size()));
@@ -195,11 +196,13 @@ Result validate_image_facts(const ImageFacts &image, util::DiagnosticEmitter dia
           manifest.original_text_bytes != image.original_text_bytes ||
           manifest.prepared_text_bytes != image.prepared_text_bytes)
         return diagnostic.emit() << "entry manifest differs from image";
-      if (!add_extent(total_sites, manifest.sites.size(), limits.sites) ||
+      if (!add_extent(total_sites, manifest.sites.size() + manifest.boundaries.size(),
+                      limits.sites) ||
           !add_extent(encoded_bytes,
                       kManifestFixedBytes + manifest.entry.name.size() +
                           uint64_t{manifest.sites.size()} * kSiteBytes +
-                          uint64_t{manifest.barriers.size()} * kBarrierBytes,
+                          uint64_t{manifest.barriers.size()} * kBarrierBytes +
+                          uint64_t{manifest.boundaries.size()} * kBoundaryBytes,
                       limits.metadata_bytes))
         return diagnostic.emit() << "aggregate image facts exceed budget";
       for (const SiteFacts &site : manifest.sites) {
@@ -215,6 +218,18 @@ Result validate_image_facts(const ImageFacts &image, util::DiagnosticEmitter dia
           prepared_observations.emplace_back(barrier.prepared_signal, barrier.prepared_signal + 4);
         prepared_observations.emplace_back(barrier.prepared_wait,
                                            barrier.completion_probe + barrier.probe_size);
+      }
+      std::set<uint64_t> original_boundaries;
+      for (const BoundaryFacts &boundary : manifest.boundaries) {
+        // Entry and exit may observe the same original endpgm instruction.
+        if (original_boundaries.insert(boundary.original_offset).second)
+          original_sites.emplace_back(boundary.original_offset, boundary.original_offset + 4);
+        if (boundary.prepared_guest_size != 0)
+          prepared_observations.emplace_back(boundary.prepared_guest_offset,
+                                             boundary.prepared_guest_offset +
+                                                 boundary.prepared_guest_size);
+        prepared_observations.emplace_back(boundary.probe_offset,
+                                           boundary.probe_offset + boundary.probe_size);
       }
       selected_keys.push_back(entry.key);
     } else {

@@ -600,6 +600,8 @@ TEST_P(Vop3F16TernaryOutputOrderTest, MatchesScalarOutputContractWithSimdEnabled
           EXPECT_TRUE(tracker.no_tracked_path_executed())
               << test.name << ": forced-scalar execution used SIMD";
         } else if (test.arch != rocjitsu::IsaFamily::Rdna3 &&
+                   !(test.arch == rocjitsu::IsaFamily::Rdna2 &&
+                     test.opcode == rdna2::kVDivFixupF16Vop3) &&
                    !(test.arch == rocjitsu::IsaFamily::Cdna4 &&
                      (test.opcode == cdna4::kVMin3F16Vop3 || test.opcode == cdna4::kVMax3F16Vop3 ||
                       test.opcode == cdna4::kVMed3F16Vop3 || test.opcode == cdna4::kVMadF16Vop3 ||

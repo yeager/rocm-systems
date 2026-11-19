@@ -24,7 +24,7 @@ def supports_integer_compare(arch, mnemonic):
         return False
     return arch in ('rdna3', 'rdna4', 'cdna3', 'cdna4', 'cdna5') or (
         arch in ('cdna1', 'cdna2', 'rdna1', 'rdna2', 'rdna3_5')
-        and INTEGER_COMPARISONS[mnemonic][0] == 32
+        and INTEGER_COMPARISONS[mnemonic][0] in (16, 32, 64)
     )
 
 
@@ -134,6 +134,7 @@ def gen_float_compare(ctx: ExecuteContext) -> str | None:
             'rdna3_5',
             'rdna4',
             'cdna1',
+            'cdna2',
             'cdna3',
             'cdna4',
             'cdna5',
@@ -175,8 +176,8 @@ def gen_float_compare(ctx: ExecuteContext) -> str | None:
         skip_inputs = str(constant).lower()
         if constant:
             skip_inputs = (
-                '!amdgpu::gfx1150_constant_compare_reads_inputs('
-                'wf.cu().arithmetic_flags(), wf.dx10_clamp())'
+                '!(!wf.dx10_clamp() && ((wf.cu().arithmetic_flags() & '
+                'RJ_ARITH_SEMANTICS_MASK) == RJ_ARITH_SEMANTICS_COMPATIBILITY))'
             )
         lines += [
             f'  amdgpu::arith::execute_float_compare<{bits}>(wf, {wave_api(api, 32)}, {wave_api(api, 64)},',

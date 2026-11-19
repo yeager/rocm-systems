@@ -76,7 +76,7 @@ def test_integer_compare_signatures_and_result_commit(name):
     assert (
         gen_integer_compare(context('cdna2', name, [], ['a', 'b'], is_vop3=False))
         is not None
-    ) == (bits == 32)
+    )
 
 
 @pytest.mark.parametrize(
@@ -182,7 +182,8 @@ def test_float_comparisons_preserve_policy_modifiers_and_state_signature(name):
         assert 'inst_.abs' not in implicit
         assert ('wf.set_exec(result)' in implicit) == name.startswith('V_CMPX_')
     assert (
-        gen_float_compare(context('cdna2', name, [], ['a', 'b'], is_vop3=False)) is None
+        gen_float_compare(context('cdna2', name, [], ['a', 'b'], is_vop3=False))
+        is not None
     )
 
 
@@ -326,7 +327,7 @@ def test_gfx1150_comparison_bindings_own_signaling_policy(name):
         assert f'execute_float_compare<{bits}>' in body
         assert 'RJ_ARITH_FP_DX10_CLAMP_OFF' in body
         assert '/*observe_full_exec=*/false' in body
-        assert ('gfx1150_constant_compare_reads_inputs' in body) == constant
+        assert ('RJ_ARITH_SEMANTICS_COMPATIBILITY' in body) == constant
         assert ('RJ_ARITH_ALU_HIGH_A' in body) == (bits == 16 and vop3)
         assert 'execute_compare_with_exceptions' not in body
         if name.startswith('V_CMPX_'):
@@ -392,6 +393,37 @@ def test_gfx908_float_comparisons_have_no_legacy_status_bypass(name):
             assert ('commit_result(result)' if vop3 else 'wf.set_exec(result)') in body
 
 
+@pytest.mark.parametrize('name', sorted(FLOAT_COMPARISONS))
+def test_gfx90a_float_comparisons_use_shared_numeric_policy(name):
+    bits, constant = FLOAT_COMPARISONS[name]
+    for vop3 in (False, True):
+        body = gen_float_compare(
+            context(
+                'cdna2',
+                name,
+                ['dst'] if vop3 else [],
+                ['a', 'b'],
+                is_vop3=vop3,
+                result_writer='commit_result' if vop3 else None,
+            )
+        )
+        api = 'rj_arith_' + name.lower().replace('_tru_', '_t_')
+        assert f'{api}_w32, {api}_w64,' in body
+        assert f'execute_float_compare<{bits}>' in body
+        assert f'a, b, {str(constant).lower()},' in body
+        assert ('RJ_ARITH_ALU_HIGH_A' in body) == (bits == 16 and vop3)
+        assert (
+            'wf.set_exec(result)' in body or 'commit_result(result)' in body
+        ) == name.startswith('V_CMPX_')
+        if name.startswith('V_CMPX_'):
+            assert (
+                'write_wave_mask_scalar(dst, wf, result)'
+                if vop3
+                else 'wf.set_vcc_mask(result)'
+            ) in body
+        assert 'execute_compare_with_exceptions' not in body
+
+
 @pytest.mark.parametrize('prefix', ['V_CMP', 'V_CMPX'])
 def test_tru_alias_matches_profile_spelling(prefix):
     for arch in ['rdna1', 'rdna2', 'rdna3', 'rdna4', 'cdna3', 'cdna4', 'cdna5']:
@@ -436,6 +468,34 @@ def test_gfx10_native_float_ownership_per_method(arch, encoding, count):
 
 
 @pytest.mark.parametrize('arch', ['rdna1', 'rdna2'])
+@pytest.mark.parametrize('encoding,count', [('vopc', 64), ('vop3', 32)])
+def test_gfx10_half_float_ownership_per_method(arch, encoding, count):
+    root = (
+        Path(__file__).resolve().parents[3]
+        / 'rocjitsu/src/rocjitsu/isa/arch/amdgpu/generated'
+    )
+    source = (root / arch / f'{encoding}_exec.cpp').read_text()
+    checked = 0
+    for match in re.finditer(
+        r'void (VCmpx?\w+F16Vop\w*)::execute(?:_modifier)?_impl\([^)]*\)\s*\{', source
+    ):
+        if 'Class' in match[1]:
+            continue
+        end, depth = match.end(), 1
+        while depth:
+            depth += (source[end] == '{') - (source[end] == '}')
+            end += 1
+        body = source[match.end() : end - 1]
+        assert '_gfx10,' in body, match[1]
+        assert 'execute_float_compare<16>' in body, match[1]
+        assert 'execute_compare_with_exceptions' not in body, match[1]
+        assert 'CapturedArithmeticSource' not in body, match[1]
+        assert 'RJ_ARITH_ALU_HIGH' not in body, match[1]
+        checked += 1
+    assert checked == count
+
+
+@pytest.mark.parametrize('arch', ['rdna1', 'rdna2'])
 @pytest.mark.parametrize(
     'name',
     [
@@ -467,31 +527,3 @@ def test_gfx10_float_comparisons_use_library_status(arch, name):
         if name.startswith('V_CMPX_'):
             assert ('commit_result' if vop3 else 'wf.set_exec(result)') in body
             assert 'wf.set_vcc_mask(result)' not in body
-
-
-@pytest.mark.parametrize('arch', ['rdna1', 'rdna2'])
-@pytest.mark.parametrize('encoding,count', [('vopc', 64), ('vop3', 32)])
-def test_gfx10_half_float_ownership_per_method(arch, encoding, count):
-    root = (
-        Path(__file__).resolve().parents[3]
-        / 'rocjitsu/src/rocjitsu/isa/arch/amdgpu/generated'
-    )
-    source = (root / arch / f'{encoding}_exec.cpp').read_text()
-    checked = 0
-    for match in re.finditer(
-        r'void (VCmpx?\w+F16Vop\w*)::execute(?:_modifier)?_impl\([^)]*\)\s*\{', source
-    ):
-        if 'Class' in match[1]:
-            continue
-        end, depth = match.end(), 1
-        while depth:
-            depth += (source[end] == '{') - (source[end] == '}')
-            end += 1
-        body = source[match.end() : end - 1]
-        assert '_gfx10,' in body, match[1]
-        assert 'execute_float_compare<16>' in body, match[1]
-        assert 'execute_compare_with_exceptions' not in body, match[1]
-        assert 'CapturedArithmeticSource' not in body, match[1]
-        assert 'RJ_ARITH_ALU_HIGH' not in body, match[1]
-        checked += 1
-    assert checked == count

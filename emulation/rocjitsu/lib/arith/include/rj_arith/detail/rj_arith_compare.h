@@ -2763,6 +2763,14 @@ int rj_arith_v_cmpx_nlt_f64_w64_gfx908(uint64_t flags, uint64_t exec_mask,
 int rj_arith_v_cmpx_t_f64_w64_gfx908(uint64_t flags, uint64_t exec_mask, uint64_t instruction_flags,
                                      uint64_t *d, const uint32_t *const *a,
                                      const uint32_t *const *b, uint32_t *trapsts);
+// Gfx1150 predicates retain the unsuffixed numeric mask, VGPR layout and
+// instruction controls. DX10_CLAMP_OFF is additionally accepted. Compatibility
+// accumulates INVALID only with that flag set: CLAMP signals on any NaN,
+// otherwise only signaling NaNs contribute. No INPUT_DENORM is produced.
+// Numeric-only modes leave status unused; mode 3 is unsupported. All input reads
+// finish before mask/status stores. Constants need inputs only when reporting
+// Compatibility status with DX10_CLAMP_OFF; empty EXEC needs no inputs.
+// This preserves the existing emulator model, without new empirical qualification.
 
 // Gfx10 FP32/FP64 predicates use the same numeric masks, operand layout and
 // controls as the unsuffixed forms, for both wave sizes. Compatibility+CLAMP

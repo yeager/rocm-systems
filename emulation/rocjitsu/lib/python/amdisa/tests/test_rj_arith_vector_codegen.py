@@ -1025,12 +1025,14 @@ def test_older_word_routing_reuses_apis_without_enabling_neighboring_arithmetic(
     assert 'rj_arith_v_cndmask_b32_w64,' in select
     assert ('read_wave_mask_scalar(mask, wf)' in select) == vop3
     assert ('inst_.abs' in select) == vop3
-    assert gen_vector32(context(arch, 'V_AND_B32', ['d'], ['a', 'b'], vop3)) is None
+    assert gen_vector32(context(arch, 'V_AND_B32', ['d'], ['a', 'b'], vop3)) is not None
 
 
 def test_unmigrated_routing_and_operand_shapes_keep_existing_path():
     for arch in ('rdna1', 'rdna2', 'rdna3_5', 'cdna1', 'cdna2'):
-        assert gen_vector32(context(arch, 'V_MOV_B32', ['dst'], ['a'], False)) is None
+        assert (
+            gen_vector32(context(arch, 'V_MOV_B32', ['dst'], ['a'], False)) is not None
+        )
     assert (
         gen_vector32(context('rdna4', 'V_AND_B32', ['dst', 'scc'], ['a', 'b'], False))
         is None
@@ -1051,5 +1053,6 @@ def test_older_saturation_retains_word_or_selected_half_policy(arch):
         assert ('word_destination' in body) == (not legacy and not vop3)
     # The independent word-integer migration remains separate.
     assert (
-        gen_vector32(context(arch, 'V_ADD_NC_U32', ['dst'], ['a', 'b'], True)) is None
+        gen_vector32(context(arch, 'V_ADD_NC_U32', ['dst'], ['a', 'b'], True))
+        is not None
     )

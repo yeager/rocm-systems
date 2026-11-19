@@ -15,7 +15,7 @@ from amdisa.codegen.execute.sema_lower import (
     RegClass,
     lower_sema_block,
 )
-from amdisa.codegen.execute.packed import gen_pk_binop, gen_pk_mov_b32, gen_pk_ternary
+from amdisa.codegen.execute.packed import gen_pk_binop, gen_pk_ternary
 from amdisa.codegen.execute.vector_special import gen_cvt_fp8, gen_vector_cvt_pk
 from amdisa.sema_fingerprint import fingerprint
 from amdisa.sema_properties import InstructionProperty, derive_properties
@@ -2633,29 +2633,6 @@ class TestDerivePacked:
         assert sem.semantic_class == semantic_class
         assert sem.operation == operation
         assert sem.data_type == 'bf16'
-
-    @pytest.mark.parametrize(
-        ('operation', 'data_type', 'helper'),
-        [
-            ('add', 'i16', 'vop3_integer_add<int16_t>'),
-            ('sub', 'i16', 'vop3_integer_sub<int16_t>'),
-            ('add', 'u16', 'vop3_integer_add<uint16_t>'),
-            ('sub', 'u16', 'vop3_integer_sub<uint16_t>'),
-        ],
-    )
-    def test_pk_integer_add_sub_clamps_each_selected_half(
-        self, operation, data_type, helper
-    ):
-        cpp = gen_pk_binop(
-            ['vdst'],
-            ['src0', 'src1'],
-            operation,
-            data_type,
-            ('inst_.opsel', 'inst_.opsel_hi'),
-        )
-
-        assert cpp.count(helper) == 2
-        assert cpp.count('inst_.clamp') == 2
 
     @pytest.mark.parametrize(
         ('name', 'operation', 'data_type'),

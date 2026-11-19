@@ -13,6 +13,7 @@
 
 #include "compute_unit_test_util.h"
 #include "decode_test_util.h"
+#include "rocjitsu/isa/arch/amdgpu/shared/fp_mode.h"
 #include "rocjitsu/isa/isa_family.h"
 #include "util/simd_test_hooks.h"
 
@@ -549,7 +550,7 @@ TEST_P(Vop3F16TernaryOutputOrderTest, MatchesScalarOutputContractWithSimdEnabled
     return;
   }
   ForceScalarGuard guard;
-  amdgpu::fp_mode::ScopedEnvironment environment(0);
+  amdgpu::fp_mode::detail::ScopedFenv environment(0);
   const auto &test = GetParam();
   // The RDNA2 MIN3/MAX3/MED3 cases here use the generic low-half executor.
   const uint8_t selection_count = test.arch == rocjitsu::IsaFamily::Rdna2 ? 1 : 2;

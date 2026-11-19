@@ -95,13 +95,10 @@ inline void execute_fp8_widen_sdwa(Inst &inst, Wavefront &wave, Unary32Function 
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
-
-// Forward encoded SDWA modifiers; rj-arith resolves the architecture's numerical policy.
-// Profiles without SDWA instantiate the surrounding generated branch with zero controls.
 
 // Convert and apply output modifiers in rj-arith, then place the SDWA result bytes.
 // Validate arithmetic before any destination write.
@@ -130,7 +127,7 @@ inline void execute_byte_conversion_sdwa(Inst &inst, Wavefront &wave, Unary32Fun
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -185,7 +182,7 @@ inline void execute_bf16_widen_sdwa(Inst &inst, Wavefront &wave, Unary32Function
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -215,9 +212,6 @@ using FloatUnary32Function = int (*)(uint64_t, uint32_t, uint64_t, uint32_t *con
                                      const uint32_t *const *, uint32_t *);
 using FloatUnary64Function = int (*)(uint64_t, uint64_t, uint64_t, uint32_t *const *,
                                      const uint32_t *const *, uint32_t *);
-
-// Forward encoded SDWA modifiers; rj-arith resolves the architecture's numerical policy.
-// Profiles without SDWA instantiate the surrounding generated branch with zero controls.
 
 // Convert a staged SDWA source, retaining the legacy F16 prescaling order.
 // SDWA owns only destination placement; errors commit neither results nor FP status.
@@ -250,7 +244,7 @@ inline void execute_conversion16_sdwa(Inst &inst, Wavefront &wave, FloatUnary32F
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
   wave.set_trapsts(wave.trapsts() | causes);
@@ -292,7 +286,7 @@ inline void execute_conversion32_sdwa(Inst &inst, Wavefront &wave, Wave32 wave32
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
   wave.set_trapsts(wave.trapsts() | causes);
@@ -324,7 +318,7 @@ inline void execute_normalized_sdwa(Inst &inst, Wavefront &wave, Unary32Function
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -445,7 +439,7 @@ inline void execute_float_round_sdwa(Inst &inst, Wavefront &wave, FloatUnary32Fu
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -613,7 +607,7 @@ inline void execute_packed_rtz_sdwa(Inst &inst, Wavefront &wave, FloatBinary32Fu
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
   wave.set_trapsts(wave.trapsts() | causes);
@@ -1021,7 +1015,7 @@ template <typename Inst> inline auto sdwa_half_math_writer(Inst &inst) {
     }
     for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
       if (exec_mask & (uint64_t{1} << lane))
-        sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+        sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
     return !wave.instruction_execution_failed();
   };
@@ -1090,7 +1084,7 @@ inline void execute_half_exponent_sdwa(Inst &inst, Wavefront &wave, FloatUnary32
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -1129,7 +1123,7 @@ inline void execute_float_binary16_sdwa(Inst &inst, Wavefront &wave, FloatBinary
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
       // Arithmetic already applied scaling and clamp; only byte placement remains.
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
   wave.set_trapsts(wave.trapsts() | causes);
@@ -1374,7 +1368,7 @@ inline void execute_packed_fmac_sdwa(Inst &inst, Wavefront &wave, Wave32Function
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask & (1ULL << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
   if (!wave.instruction_execution_failed()) {
@@ -1411,7 +1405,7 @@ inline void execute_exponent_sdwa(Inst &inst, Wavefront &wave, FloatUnary32Funct
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask >> lane & 1) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -1442,7 +1436,7 @@ inline void execute_float_unary_sdwa(Inst &inst, Wavefront &wave, FloatUnary32Fu
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec_mask >> lane & 1) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -1475,7 +1469,7 @@ inline void execute_half_unary_sdwa(Inst &inst, Wavefront &wave, FloatUnary32Fun
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if ((exec_mask >> lane) & 1) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, result[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, result[lane]);
     }
   }
 }
@@ -1508,7 +1502,7 @@ inline void execute_sdwa_float_binary16(Inst &inst, Wavefront &wave, FloatBinary
   }
   for (uint32_t lane = 0; lane < wave.wf_size(); ++lane) {
     if (exec & (uint64_t{1} << lane)) {
-      sdwa::write_lane<sdwa::ResultFormat::NONE>(inst, wave, destination, lane, results[lane]);
+      sdwa::write_lane(inst, wave, destination, lane, results[lane]);
     }
   }
   wave.set_trapsts(wave.trapsts() | causes);

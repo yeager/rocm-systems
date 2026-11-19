@@ -26,7 +26,7 @@
 
 #include "rocjitsu/base/rj_compiler.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/accvgpr_layout.h"
-#include "rocjitsu/isa/arch/amdgpu/shared/fp_mode.h"
+#include "rocjitsu/isa/arch/amdgpu/shared/denormal_value.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/gfx11_dot2.h"
 #include "rocjitsu/isa/isa_family.h"
 #include "rocjitsu/result.h"

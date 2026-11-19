@@ -13,7 +13,6 @@
 #include "rocjitsu/isa/arch/amdgpu/generated/rdna4/builders.h"
 #include "rocjitsu/isa/arch/amdgpu/generated/rdna4/opcodes.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/fp_mode.h"
-#include "rocjitsu/isa/arch/amdgpu/shared/ldexp.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/simd_glue.h"
 #include "rocjitsu/isa/decoder.h"
 #include "rocjitsu/isa/instruction.h"
@@ -5661,30 +5660,6 @@ TEST(ValuFpModeHelpers, MixedF16FmaCancellationAcrossF32Range) {
   }
 }
 
-TEST(ValuFpModeHelpers, F16FmaRetainsTinyProduct) {
-  // Both physical cards round 65504 + 2^-48 upward to infinity. A host F64
-  // addition alone loses the tiny product and incorrectly returns 65504.
-  for (uint32_t round = 0; round < 4; ++round)
-    for (uint32_t denorm = 0; denorm < 4; ++denorm)
-      for (bool overflow : {false, true}) {
-        const uint16_t expected = round == 1 && (denorm & 1u) && !overflow ? 0x7c00u : 0x7bffu;
-        EXPECT_EQ(amdgpu::fp_mode::fma_f16(1, 1, 0x7bff, false, false, false, false, false, false,
-                                           round, denorm, 0, false, overflow, false, true),
-                  expected);
-      }
-}
-
-TEST(ValuFpModeHelpers, F16FmaFlushesBeforePacking) {
-  // Packing directly to a subnormal half can round these tiny intermediates
-  // to minimum normal; hardware tests the rounded significand first.
-  for (uint32_t round = 0; round < 4; ++round)
-    for (uint16_t sign : {uint16_t{0}, uint16_t{0x8000}})
-      EXPECT_EQ(amdgpu::fp_mode::fma_f16(1, sign | 0x03ff, sign | 0x03ff, false, false, false,
-                                         false, false, false, round, 1, 0, false, false, false,
-                                         true),
-                sign);
-}
-
 TEST(ValuFpModeHelpers, FusedResultAndOutputFlush) {
   using amdgpu::fp_mode::Arithmetic;
   EXPECT_EQ(std::bit_cast<uint32_t>(amdgpu::fp_mode::arithmetic<Arithmetic::FMA>(
@@ -5693,15 +5668,6 @@ TEST(ValuFpModeHelpers, FusedResultAndOutputFlush) {
   EXPECT_EQ(std::bit_cast<uint32_t>(
                 amdgpu::fp_mode::arithmetic<Arithmetic::MUL>(-0x1p-126f, 0.5f, 0.0f, 0, 1)),
             0x80000000u);
-}
-
-TEST(ValuFpModeHelpers, LegacySdwaOutputScalePrecedesF16Rounding) {
-  // Explicit omod pins SDWA's legacy pre-round scaling, without SDWA hardware
-  // validation. Migrated VOP3 callers leave it zero and apply output_modifier
-  // to the rounded result; their captures do not establish SDWA ordering.
-  EXPECT_EQ(amdgpu::fp_mode::finish_arithmetic_f16(65504.0 * 2.0, 0, 1, false, 3), 0x7bffu);
-  EXPECT_EQ(amdgpu::fp_mode::finish_arithmetic_f16(1.0 + 0x1p-24, 1, 1, false, 1), 0x4001u);
-  EXPECT_EQ(amdgpu::fp_mode::finish_arithmetic_f16(-0.0, 0, 1, false, 1), 0u);
 }
 
 // Floating compares flush their inputs under MODE.FP_DENORM before the

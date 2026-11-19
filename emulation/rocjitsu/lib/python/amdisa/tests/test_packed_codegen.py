@@ -1,18 +1,24 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 
-"""Tests for packed execute code generation."""
-
+from amdisa.isa_profile import FloatDotAccumulation
 from amdisa.codegen.execute.packed import (
+    gen_dot2,
+    gen_dot2_true16,
+    gen_dot4,
+    gen_dot8,
     gen_pk_binop,
     gen_pk_binop_f32,
     gen_pk_binop_f64,
-    gen_pk_ternary_f64,
     gen_pk_binop_u64,
     gen_pk_lshl_add_u64,
     gen_pk_ternary,
+    gen_pk_ternary_f64,
 )
 from amdisa.codegen.execute.simd_codegen import vop3p_local_simd_probe_line
+import pytest
+
+"""Tests for packed execute code generation."""
 
 
 def test_pk_fma_f16_has_no_legacy_ternary_fallback():
@@ -81,24 +87,6 @@ def test_pk_mad_integer_clamp_saturates_both_selected_halves():
     assert unsigned.count('inst_.clamp') == 2
 
 
-def test_pk_f16_binop_narrows_inline_float_constants():
-    cpp = gen_pk_binop(
-        ['vdst'],
-        ['src0', 'src1'],
-        'add',
-        'f16',
-        opsel_exprs=('inst_.op_sel', 'inst_.op_sel_hi'),
-    )
-
-    assert 'if (amdgpu::pk16_src_needs_narrowing(inst_.src0, src0.size_bits()))' in cpp
-    assert 'raw0 = util::f32_to_f16(std::bit_cast<float>(raw0));' in cpp
-    assert 'if (amdgpu::pk16_src_needs_narrowing(inst_.src1, src1.size_bits()))' in cpp
-    assert 'raw1 = util::f32_to_f16(std::bit_cast<float>(raw1));' in cpp
-    # Keyed on the selector field, never on the operand: an IsaOperand keeps a
-    # 255-literal's value in encoding_value_.
-    assert 'encoding_value_' not in cpp
-
-
 def test_pk_bf16_ternary_preserves_fp32_inline_constants():
     cpp = gen_pk_ternary(
         ['vdst'],
@@ -143,37 +131,7 @@ def test_pk_integer_binop_leaves_inline_constants_alone():
         assert 'bit_cast' not in cpp
 
 
-def test_gfx1250_pk_f32_uses_literal_aware_pair_helper():
-    cpp = gen_pk_binop_f32(
-        ['vdst'],
-        ['src0', 'src1'],
-        'add',
-        opsel_exprs=('inst_.opsel', 'inst_.opsel_hi'),
-        use_cdna5_helpers=True,
-    )
-
-    assert 'const auto s0 = amdgpu::RegisterAccess(wf).read_lane_pair32(' in cpp
-    assert 'src0, lane, amdgpu::ScalarPairMode::Replicate32)' in cpp
-    assert 's0_hi_w' not in cpp
-    assert 's0.hi' in cpp
-    assert 'read_lane64' not in cpp
-
-
-def test_cdna_pk_f32_reads_all_register_pairs():
-    cpp = gen_pk_binop_f32(
-        ['vdst'],
-        ['src0', 'src1'],
-        'add',
-        opsel_exprs=('inst_.op_sel', 'inst_.op_sel_hi'),
-    )
-
-    assert 'read_lane_pair32(src0, lane)' in cpp
-    assert 'const uint32_t s0_lo_w = s0_pair_w.lo' in cpp
-    assert 'const uint32_t s0_hi_w = s0_pair_w.hi' in cpp
-    assert 'encoding_value_ >= 256' not in cpp
-
-
-def test_pk_lshl_add_u64_routes_through_count_validating_adapter():
+def test_pk_lshl_add_u64_operates_on_two_independent_64_bit_elements():
     cpp = gen_pk_lshl_add_u64(['vdst'], ['src0', 'src1', 'src2'])
     assert 'execute_packed_u64<true>' in cpp
     assert 'rj_arith_v_pk_lshl_add_u64_w32, 0, vdst, src0, src1, &src2' in cpp
@@ -198,29 +156,11 @@ def test_pk_u64_binop_rejects_unknown_operation():
         gen_pk_binop_u64(['vdst'], ['src0', 'src1'], 'mul')
 
 
-def test_pk_f64_binops_use_carrier_aware_arithmetic_adapter():
-    for operation in ('add', 'mul', 'min_num', 'max_num'):
-        cpp = gen_pk_binop_f64(['vdst'], ['src0', 'src1'], operation)
-        assert 'execute_packed_f64<false>' in cpp
-        assert f'rj_arith_v_pk_{operation}_f64_w32, modifiers, vdst, src0, src1' in cpp
-        assert 'inst_.neg | (uint64_t(inst_.neg_hi) << 3)' in cpp
-        assert 'inst_.clamp ? RJ_ARITH_PK_CLAMP : 0' in cpp
-        assert 'fp_mode::' not in cpp
-
-
 def test_pk_f64_binop_rejects_unknown_operation():
     import pytest
 
     with pytest.raises(ValueError, match='unsupported packed F64 binary operation'):
         gen_pk_binop_f64(['vdst'], ['src0', 'src1'], 'divide')
-
-
-def test_pk_f64_fma_uses_guest_fp_adapter():
-    cpp = gen_pk_ternary_f64(['vdst'], ['src0', 'src1', 'src2'], 'fma')
-    assert 'execute_packed_f64<true>' in cpp
-    assert 'rj_arith_v_pk_fma_f64_w32, modifiers, vdst, src0, src1, &src2' in cpp
-    assert 'inst_.neg | (uint64_t(inst_.neg_hi) << 3)' in cpp
-    assert 'inst_.clamp ? RJ_ARITH_PK_CLAMP : 0' in cpp
 
 
 def test_pk_f64_ternary_rejects_unknown_operation():
@@ -230,45 +170,8 @@ def test_pk_f64_ternary_rejects_unknown_operation():
         gen_pk_ternary_f64(['vdst'], ['src0', 'src1', 'src2'], 'mad')
 
 
-def test_renamed_vop3p_packed_f32_probe_passes_profile_selectors():
-    probe = vop3p_local_simd_probe_line('v_pk_add_f32_vop3p', ('opsel', 'opsel_hi'))
-
-    assert probe is not None
-    assert 'ROCJITSU_TRY_SIMD_VOP3P_PK_BINARY_F32_SELECTORS' in probe
-    assert 'inst_.opsel, inst_.opsel_hi' in probe
-    assert (
-        vop3p_local_simd_probe_line('v_pk_add_f32_vop3p', ('op_sel', 'op_sel_hi'))
-        is None
-    )
-    assert (
-        vop3p_local_simd_probe_line('v_pk_add_f16_vop3p', ('opsel', 'opsel_hi'))
-        == '  ROCJITSU_TRY_SIMD_PACKED_FLOAT(ADD, false);'
-    )
-
-
-def test_renamed_vop3p_packed_fma_f32_probe_passes_all_profile_selectors():
-    probe = vop3p_local_simd_probe_line(
-        'v_pk_fma_f32_vop3p',
-        ('opsel', 'opsel_hi'),
-        'inst_.pad_14',
-    )
-
-    assert probe is not None
-    assert 'ROCJITSU_TRY_SIMD_VOP3P_PK_TERNARY_F32_SELECTORS' in probe
-    assert 'inst_.opsel, inst_.opsel_hi, inst_.pad_14' in probe
-    assert (
-        vop3p_local_simd_probe_line(
-            'v_pk_fma_f32_vop3p',
-            ('op_sel', 'op_sel_hi'),
-        )
-        is None
-    )
-
-
 def test_renamed_packed_float_routes_use_exact_helpers():
     for spelling, operation, bf16 in (
-        ('v_pk_min_f16_vop3p', 'MIN', False),
-        ('v_pk_max_f16_vop3p', 'MAX', False),
         ('v_pk_add_bf16_vop3p', 'ADD', True),
         ('v_pk_fma_bf16_vop3p', 'FMA', True),
     ):
@@ -322,3 +225,26 @@ def test_dot_dispatch_covers_every_semantic_class():
     assert found, 'no DOT semantic classes found; the ISA specs did not load'
     routes = ('dot2', 'dot4', 'dot8')
     assert found == {cls for cls in DISPATCH if cls.startswith(routes)}
+
+
+def test_pk_f16_binary_has_no_legacy_fallback():
+    with pytest.raises(ValueError, match='does not support f16'):
+        gen_pk_binop(['vdst'], ['src0', 'src1'], 'add', 'f16')
+
+
+def test_pk_f64_binops_use_carrier_aware_arithmetic_adapter():
+    for operation in ('add', 'mul', 'min_num', 'max_num'):
+        cpp = gen_pk_binop_f64(['vdst'], ['src0', 'src1'], operation)
+        assert 'execute_packed_f64<false>' in cpp
+        assert f'rj_arith_v_pk_{operation}_f64_w32, modifiers, vdst, src0, src1' in cpp
+        assert 'inst_.neg | (uint64_t(inst_.neg_hi) << 3)' in cpp
+        assert 'inst_.clamp ? RJ_ARITH_PK_CLAMP : 0' in cpp
+        assert 'fp_mode::' not in cpp
+
+
+def test_pk_f64_fma_uses_guest_fp_adapter():
+    cpp = gen_pk_ternary_f64(['vdst'], ['src0', 'src1', 'src2'], 'fma')
+    assert 'execute_packed_f64<true>' in cpp
+    assert 'rj_arith_v_pk_fma_f64_w32, modifiers, vdst, src0, src1, &src2' in cpp
+    assert 'inst_.neg | (uint64_t(inst_.neg_hi) << 3)' in cpp
+    assert 'inst_.clamp ? RJ_ARITH_PK_CLAMP : 0' in cpp

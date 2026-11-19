@@ -456,28 +456,28 @@ TEST(FpIntegralF64Legacy, Arithmetic) {
   };
   rocjitsu::arith::test::check_loose_unary_f64<32>(
       rj_arith_v_trunc_f64_w32_gfx908, [&](double x) { return reference(0, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<32>(
       rj_arith_v_ceil_f64_w32_gfx908, [&](double x) { return reference(1, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<32>(
       rj_arith_v_rndne_f64_w32_gfx908, [&](double x) { return reference(2, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<32>(
       rj_arith_v_floor_f64_w32_gfx908, [&](double x) { return reference(3, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<64>(
       rj_arith_v_trunc_f64_w64_gfx908, [&](double x) { return reference(0, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<64>(
       rj_arith_v_ceil_f64_w64_gfx908, [&](double x) { return reference(1, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<64>(
       rj_arith_v_rndne_f64_w64_gfx908, [&](double x) { return reference(2, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
   rocjitsu::arith::test::check_loose_unary_f64<64>(
       rj_arith_v_floor_f64_w64_gfx908, [&](double x) { return reference(3, x); }, false,
-      /*accepts_exact=*/false);
+      /*check_omod=*/true, /*accepts_exact=*/false);
 }
 
 // Legacy NaN quieting is unconditional, unlike gfx11 with guest IEEE clear.

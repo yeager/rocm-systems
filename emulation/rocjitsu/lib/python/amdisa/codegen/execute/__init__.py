@@ -90,9 +90,6 @@ def _register_handlers() -> None:
         gen_vector_trig_preop,
         gen_vector_mad_64_32,
         gen_vector_mad_32_16,
-        gen_vector_div_fixup,
-        gen_vector_div_scale,
-        gen_vector_div_fmas,
         gen_vector_dot2c_bf16,
         gen_vector_bitop3,
         gen_vector_permlane_swap,
@@ -106,8 +103,6 @@ def _register_handlers() -> None:
     from amdisa.codegen.execute.packed import (
         gen_pk_binop,
         gen_pk_ternary,
-        gen_pk_binop_f32,
-        gen_pk_ternary_f32,
         gen_pk_ternary_f64,
         gen_pk_binop_u64,
         gen_pk_binop_f64,
@@ -190,20 +185,6 @@ def _register_handlers() -> None:
     )
     DISPATCH['vector_mad_32_16'] = lambda c: gen_vector_mad_32_16(
         c.dst_ops, c.src_ops, c.dtype, c.is_vop3
-    )
-    DISPATCH['vector_div_fixup'] = lambda c: gen_vector_div_fixup(
-        c.dst_ops, c.src_ops, c.dtype, c.is_vop3, c.has_abs
-    )
-    DISPATCH['vector_div_scale'] = lambda c: gen_vector_div_scale(
-        c.dst_ops,
-        c.src_ops,
-        c.dtype,
-        c.is_vop3,
-        c.has_abs,
-        c.result_writer,
-    )
-    DISPATCH['vector_div_fmas'] = lambda c: gen_vector_div_fmas(
-        c.dst_ops, c.src_ops, c.dtype, c.is_vop3, c.has_abs
     )
     from .rj_arith_vector import gen_integer_dot
     from .rj_arith_float import gen_float_dot32
@@ -288,21 +269,10 @@ def _register_handlers() -> None:
         opsel_exprs=c.opsel_exprs,
         integer_clamp=c.inst.name in c.profile.integer_clamp_dtypes,
     )
-    DISPATCH['pk_binop_f32'] = lambda c: gen_pk_binop_f32(
-        c.dst_ops,
-        c.src_ops,
-        c.op,
-        opsel_exprs=c.opsel_exprs,
-        use_cdna5_helpers=c.arch_name == 'cdna5',
-    )
-    DISPATCH['pk_ternary_f32'] = lambda c: gen_pk_ternary_f32(
-        c.dst_ops,
-        c.src_ops,
-        c.op,
-        op_sel_hi_2_expr=c.op_sel_hi_2_expr,
-        opsel_exprs=c.opsel_exprs,
-        use_cdna5_helpers=c.arch_name == 'cdna5',
-    )
+    from amdisa.codegen.execute.rj_arith_packed_f32 import gen_packed_f32
+
+    DISPATCH['pk_binop_f32'] = gen_packed_f32
+    DISPATCH['pk_ternary_f32'] = gen_packed_f32
     DISPATCH['pk_binop_u64'] = lambda c: gen_pk_binop_u64(c.dst_ops, c.src_ops, c.op)
     DISPATCH['pk_binop_f64'] = lambda c: gen_pk_binop_f64(c.dst_ops, c.src_ops, c.op)
     DISPATCH['pk_ternary_f64'] = lambda c: gen_pk_ternary_f64(

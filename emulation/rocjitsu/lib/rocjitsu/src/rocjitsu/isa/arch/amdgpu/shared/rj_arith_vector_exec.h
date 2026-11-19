@@ -4,6 +4,7 @@
 #pragma once
 
 // Generated vector handlers pass entry points from these operation families.
+#include "rj_arith/detail/rj_arith_conversion.h"
 #include "rj_arith/detail/rj_arith_dot.h"
 #include "rj_arith/detail/rj_arith_graphics.h"
 #include "rj_arith/detail/rj_arith_integer.h"

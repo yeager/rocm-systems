@@ -541,6 +541,8 @@ add_executable(
     numeric_encoding_regression_test.cpp
     older_conversion32_test.cpp
     older_conversion64_test.cpp
+    older_conversion16_test.cpp
+    older_half_unary_test.cpp
     cdna5_gfx1251_simulation_test.cpp
     cdna5_instruction_test.cpp
     cdna5_sdma_test.cpp
@@ -604,10 +606,16 @@ add_executable(
     scalar_buffer_test.cpp
     scalar_cache_policy_test.cpp
     scalar_cache_discard_test.cpp
+    legacy_special_f32_test.cpp
+    legacy_native_f32_test.cpp
     transcendental_test.cpp
     comparison_test.cpp
     gfx1150_compare_test.cpp
     conversion_test.cpp
+    older_packed_conversion_test.cpp
+    older_byte_conversion_test.cpp
+    older_normalized_conversion_test.cpp
+    older_packing_test.cpp
     denormal_test.cpp
     floating_operation_test.cpp
     input_denormal_test.cpp
@@ -675,6 +683,13 @@ add_executable(
     vop3_conversion_modifiers_test.cpp
     cube_instruction_test.cpp
     division_test.cpp
+    gfx1150_dual_test.cpp
+    legacy_division_test.cpp
+    fract_test.cpp
+    frexp_exponent_test.cpp
+    frexp_mantissa_test.cpp
+    legacy_native_f64_test.cpp
+    integral_rounding_f32_test.cpp
     integral_rounding_f64_test.cpp
     division_macro_test.cpp
     valu_floating_policy_test.cpp

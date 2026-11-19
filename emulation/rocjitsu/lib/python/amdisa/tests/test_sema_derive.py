@@ -894,58 +894,20 @@ class TestDeriveVectorUnary:
         assert 'ldexp_float' not in cpp and 'div_apply_omod' not in cpp
 
     @pytest.mark.parametrize(
-        ('name', 'enc', 'op', 'scale'),
+        'name, op',
         [
-            ('V_CVT_NORM_I16_F16', 'ENC_VOP1', 'cvt_norm_i16_f16', '32767.0'),
-            ('V_CVT_NORM_I16_F16', 'ENC_VOP3', 'cvt_norm_i16_f16', '32767.0'),
-            ('V_CVT_NORM_U16_F16', 'ENC_VOP1', 'cvt_norm_u16_f16', '65535.0'),
-            ('V_CVT_NORM_U16_F16', 'ENC_VOP3', 'cvt_norm_u16_f16', '65535.0'),
+            ('V_CVT_NORM_I16_F16', 'cvt_norm_i16_f16'),
+            ('V_CVT_NORM_U16_F16', 'cvt_norm_u16_f16'),
         ],
     )
-    def test_cvt_norm_i16_u16_f16_lowers_to_scaled_saturating_convert(
-        self, name, enc, op, scale
-    ):
+    @pytest.mark.parametrize('enc', ['ENC_VOP1', 'ENC_VOP3'])
+    def test_cvt_norm_f16_retains_semantic_metadata(self, name, op, enc):
         sem = derive_semantics(name, enc)
         assert sem is not None
         assert sem.semantic_class == 'vector_unary'
         assert sem.operation == op
         assert sem.data_type == 'f16'
-
-        block = derive_sema_block(sem)
-        cpp = lower_sema_block(block)
-        assert op not in cpp
-        assert 'util::f16_to_f32' in cpp
-        assert 'std::isnan' in cpp
-        assert 'std::clamp' in cpp
-        assert scale in cpp
-        assert 'util::rndne_scalar' in cpp
-        assert 'static_cast<double>(s)' in cpp
-        assert '-32768' not in cpp
-
-    @pytest.mark.parametrize('suffix', ['I16', 'U16'])
-    @pytest.mark.parametrize('has_abs', [False, True])
-    def test_cvt_norm_i16_u16_f16_modifiers_precede_rounding(self, suffix, has_abs):
-        sem = derive_semantics(f'V_CVT_NORM_{suffix}_F16', 'ENC_VOP3')
-        # The generator withholds CLAMP/OMOD from integer results.
-        fields = {'neg'}
-        if has_abs:
-            fields.add('abs')
-        block = enrich_block(derive_sema_block(sem), enc_field_names=frozenset(fields))
-        cpp = lower_sema_block(block)
-        # MODE flushes the raw half before it is widened; ABS/NEG apply to the
-        # widened value, before the scaled rounding.
-        flush = 'input_denormal::flush_input<amdgpu::fp_format::F16>('
-        assert (
-            'input_policy = amdgpu::input_denormal::Policy::make(wf.fp_denorm_mode_f16_f64())'
-            in cpp
-        )
-        assert cpp.index('source_modifier::apply_to_float(') < cpp.index(
-            'util::f16_to_f32'
-        )
-        assert cpp.index('util::f16_to_f32') < cpp.index(flush)
-        assert cpp.index(flush) < cpp.index('util::rndne_scalar')
-        assert ('inst_.abs' in cpp) == has_abs
-        assert 'inst_.neg' in cpp
+        assert derive_sema_block(sem) is not None
 
     @pytest.mark.parametrize('suffix', ['I16', 'U16', 'F32'])
     @pytest.mark.parametrize('has_abs', [False, True])
@@ -955,6 +917,10 @@ class TestDeriveVectorUnary:
         if has_abs:
             fields.add('abs')
         block = enrich_block(derive_sema_block(sem), enc_field_names=frozenset(fields))
+        if suffix == 'F32':
+            with pytest.raises(ValueError, match='require rj-arith lowering'):
+                lower_sema_block(block)
+            return
         cpp = lower_sema_block(block)
         # F32_F16 flushes the raw half before widening it; the modifiers apply
         # to the widened value. The integer forms keep their own source read.
@@ -1071,7 +1037,7 @@ class TestDeriveVectorUnary:
         assert 'UnimplementedInst' not in cpp
 
     @pytest.mark.parametrize('enc', ['ENC_VOP1', 'ENC_VOP3'])
-    def test_cvt_off_f32_i4_lowers_to_signed_nibble_table(self, enc):
+    def test_cvt_off_f32_i4_requires_arith_lowering(self, enc):
         sem = derive_semantics('V_CVT_OFF_F32_I4', enc)
         assert sem is not None
         assert sem.semantic_class == 'vector_unary'
@@ -1079,11 +1045,10 @@ class TestDeriveVectorUnary:
         assert sem.data_type == 'f32'
 
         block = derive_sema_block(sem)
-        cpp = lower_sema_block(block)
-        assert '& 0xfu' in cpp
-        assert 'nibble -= 16' in cpp
-        assert '* 0.0625f' in cpp
-        assert 'cvt_off_f32_i4(' not in cpp
+        with pytest.raises(
+            ValueError, match='Byte conversions require rj-arith lowering'
+        ):
+            lower_sema_block(block)
 
     @pytest.mark.parametrize(
         ('name', 'helper'),
@@ -1417,14 +1382,9 @@ class TestDeriveVectorUnary:
         assert sem.operation == 'cvt'
         assert sem.data_type == 'f16_f32'
 
-        # The stage object reads MODE, including FP16_OVFL, when it is resolved.
         block = derive_sema_block(sem)
-        cpp = lower_sema_block(block)
-        assert (
-            'const auto conversion = '
-            'amdgpu::sdwa_conversion_to_f16<amdgpu::fp_format::F32>(*this, wf);'
-        ) in cpp
-        assert 'util::f32_to_f16' not in cpp
+        with pytest.raises(ValueError, match='require rj-arith lowering'):
+            lower_sema_block(block)
 
     def test_cvt_sr_pk_f16_bf16_f32_splits_seed_and_threads_fp16_ovfl(self):
         for name in ('V_CVT_SR_PK_F16_F32', 'V_CVT_SR_PK_BF16_F32'):

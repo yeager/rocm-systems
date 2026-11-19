@@ -19,6 +19,7 @@ add_library(
     wmma/swmmac_gfx1250_float.cpp
     common/cpu.cpp
     common/cpu_decode.cpp
+    common/sdwa_dispatch.cpp
     conversion/float16_conversion.cpp
     conversion/byte_conversion.cpp
     conversion/conversion16.cpp
@@ -47,9 +48,14 @@ add_library(
     dot/integer_dot.cpp
     dual/dual.cpp
     dual/dual_gfx1250.cpp
+    dual/dual_gfx1150.cpp
+    dual/dual_gfx1250.cpp
     fp/scalar_repair.cpp
     fp/fma.cpp
+    fp/separately_rounded_mad.cpp
     fp/binary.cpp
+    fp/gfx1150_fp32.cpp
+    fp/gfx908_fp32.cpp
     fp/div_fixup.cpp
     fp/div_fmas.cpp
     fp/div_scale.cpp
@@ -99,10 +105,15 @@ add_library(
     integer/sad.cpp
     integer/shift.cpp
     register/cndmask.cpp
+    math/cdna_half.cpp
+    math/cdna_unary.cpp
+    math/bf16_gfx1250.cpp
     math/half_trig.cpp
     math/half_unary.cpp
     math/rcp_iflag.cpp
+    math/tanh_gfx1250.cpp
     math/trig.cpp
+    math/cdna_trig_preop.cpp
     math/trig_preop.cpp
     math/unary.cpp
     register/dpp.cpp

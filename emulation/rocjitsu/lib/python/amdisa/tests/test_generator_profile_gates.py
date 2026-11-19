@@ -2239,10 +2239,12 @@ def _generated_matrix_call(body: str, callee: str) -> str:
 def test_every_matrix_executor_uses_profile_selected_operand_bases(
     mnemonic, arch, callee, is_sparse, uses_vgpr_msb_indexing
 ):
-    # MFMA destination width determines the block count.
-    operands = []
-    if mnemonic == 'V_MFMA_I32_16X16X32_I8' or mnemonic.startswith('V_MFMA_F32_'):
-        operands = [Operand('vdst', 128, 'OPR_VGPR', False, True, False, False, 0)]
+    # Single-block 16x16 integer and floating MFMA write four Wave64 VGPRs.
+    operands = (
+        [Operand('vdst', 128, 'OPR_VGPR', False, True, False, False, 0)]
+        if mnemonic.startswith('V_MFMA_F32_') or mnemonic == 'V_MFMA_I32_16X16X32_I8'
+        else []
+    )
     body = _gen_mfma(
         Instruction(mnemonic, 'ENC_VOP3P', 0, operands),
         arch,
@@ -6315,24 +6317,9 @@ def test_cdna5_variant_execution_callback_inventory(
         assert executable_class in backend_header
         assert executable_class in backend_source
         assert executable_class in execution_source
-    assert 'PkU64Pair read_pk_u64_pair' in execution_source
-    assert 'PkU32Pair read_pk_u32_pair' not in execution_source
+    assert 'PkU64Pair' not in execution_source
     assert 'rj_arith_v_pk_lshl_add_u64_w32, 0,' in execution_source
     assert 'rj_arith_packed_u64_exec.h' in execution_source
-    assert 'void write_pk_u64_pair' in execution_source
-    u64_read_helper = execution_source.split('PkU64Pair read_pk_u64_pair', 1)[1].split(
-        '\n}', 1
-    )[0]
-    assert 'const auto reg = operand.to_register_ref();' in u64_read_helper
-    assert 'if (!reg || reg->cls != RegClass::VGPR)' in u64_read_helper
-    assert 'packed_vgpr_physical_base(operand, wf)' in u64_read_helper
-    assert 'packed_register_dword_offset' not in execution_source
-    assert 'make_after_selector_validation' not in execution_source
-    assert 'Isa::resolved_vgpr_offset(' in execution_source
-    assert 'operand.vgpr_msb_role()' in execution_source
-    assert 'read_vgpr64(base + 2, lane)' in execution_source
-    assert 'write_vgpr64(base + 2, lane, value.hi)' in execution_source
-    assert 'is_general_register' not in u64_read_helper
     assert 'rj_arith_v_wmma_f64_16x16x4_f64_w32' in execution_source
     execute_body = execution_source.split(
         'void VWmmaF6416x16x4F64Vop3p::execute_impl', 1

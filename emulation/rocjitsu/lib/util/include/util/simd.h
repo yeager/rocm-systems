@@ -1099,37 +1099,6 @@ inline native<uint32_t> mul_hi_i32_simd(native<uint32_t> a, native<uint32_t> b) 
   stdx::where((b >> 31) != U(0u), hi) = hi - a;
   return hi;
 }
-/// Sum of the four per-byte absolute differences of two uint32 lanes (the core
-/// of v_sad_u8 / v_sad_hi_u8). Each byte difference is in [0,255], so the sum is
-/// in [0,1020]; bit-identical to the scalar byte loop.
-
-/// Masked per-byte SAD (v_msad_u8): like sad_bytes_u32_simd but a byte whose
-/// reference (src1) value is zero contributes nothing. Bit-identical to scalar.
-
-/// Per-byte unsigned lerp (v_lerp_u8): out_byte = (a + b + (c & 1)) >> 1,
-/// computed independently per byte and repacked. Bit-identical to the scalar.
-
-/// Byte permute (v_perm_b32): build each output byte from a selector byte of
-/// src2 indexing the 8 bytes of the {src0:src1} 64-bit source (src1 = low word).
-/// Selector 0..7 picks a source byte; 8..11 sign-extend source bytes 1, 3, 5,
-/// and 7; 12 yields zero; and every selector >= 13 yields 0xFF.
-
-/// High 32 bits of the 64-bit UNSIGNED product a*b (v_mul_hi_u32 semantics).
-///
-/// Computed purely with 32-bit-lane SIMD ops via the 16x16 partial-product
-/// decomposition, deliberately avoiding `fixed_size_simd<uint64_t, N>`: clang +
-/// libstdc++ miscompile the 64-bit-lane multiply/shift of an over-native-width
-/// `fixed_size_simd` (the high half comes out wrong), so the int64-widening
-/// approach diverges from the scalar `(uint64)a * b >> 32` at every SIMD width.
-/// This decomposition uses only native<uint32_t> arithmetic, so it is
-/// bit-identical to the scalar reference on every host. aHi/bHi/aLo/bLo are the
-/// 16-bit halves; each 16x16 partial fits in 32 bits and the carry chain stays
-/// below 2^32 (cross <= 3*0xFFFF), so no intermediate overflows.
-
-/// High 32 bits of the 64-bit SIGNED product a*b (v_mul_hi_i32 semantics).
-/// Derived from the unsigned high word with the standard signed correction
-/// `hi_s = hi_u - (a<0 ? b : 0) - (b<0 ? a : 0)`. Same clang/libstdc++
-/// motivation as `mul_hi_u32_simd`: no `fixed_size_simd<int64_t, N>`.
 
 #endif // RJ_HOST_HAS_STDX_SIMD
 

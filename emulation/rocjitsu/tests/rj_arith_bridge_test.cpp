@@ -40,7 +40,6 @@
 #include "rocjitsu/isa/arch/amdgpu/generated/rdna3_5/opcodes.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/rj_arith_wide_conversion_exec.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/simd_glue.h"
-#include "rocjitsu/isa/arch/amdgpu/shared/transcendental.h"
 #include "rocjitsu/isa/execution_backend.h"
 #include "rocjitsu/isa/isa_family.h"
 #include "rocjitsu/isa/target_provider.h"
@@ -16365,7 +16364,10 @@ TEST(ArithBridgeTest, Gfx1250Tanh) {
                 if (encoding) {
                   x = -std::abs(x);
                 }
-                float y = transcendental::tanh_f32(x);
+                // Independent host TANH reference with inherited NaN quieting.
+                float y = std::isnan(x)
+                              ? std::bit_cast<float>(std::bit_cast<uint32_t>(x) | 0x00400000U)
+                              : std::tanh(x);
                 uint32_t result;
                 if (half) {
                   result = util::f32_to_f16_mode(y, wave.fp16_ovfl());

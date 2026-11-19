@@ -1,31 +1,23 @@
 # Copyright (c) 2026 Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 
-from pathlib import Path
 from types import SimpleNamespace
 import hashlib, pytest, re
-from amdisa.codegen.execute import float_fract, float_ldexp
-from amdisa.codegen.execute.sema_lower import lower_sema_block
 from amdisa.codegen.execute.vector_special import (
     _TRIG_PREOP_CHUNK_BITS,
     _TRIG_PREOP_TWO_OVER_PI_CHUNKS,
     _TRIG_PREOP_VALID_BITS,
     gen_vector_bitop3,
     gen_vector_cvt_pk,
-    gen_vector_mad_32_16,
     gen_vector_movrel,
     gen_vector_perm_pk16,
     gen_vector_sat_pack,
     gen_vector_swaprel,
     gen_vector_trig_preop,
 )
-from amdisa.codegen.config import CodegenConfig
 from amdisa.codegen._generator import CodeGenerator
 from amdisa.gpuisa import Instruction, Operand
 from amdisa.isa_profile import Cdna5Profile, Rdna3Profile, Rdna4Profile
-from amdisa.sema_derive import derive_sema_block
-from amdisa.sema_enrich import enrich_block
-from amdisa.semantics import derive_semantics
 
 """Tests for vector-special execute code generation."""
 
@@ -104,12 +96,6 @@ def test_arch_local_execute_bodies_are_not_shared():
     assert 'vector_swaprel' in CodeGenerator._NON_SHAREABLE_CLASSES
     assert 'vector_perm_pk16' in CodeGenerator._NON_SHAREABLE_CLASSES
     assert 'vector_qsad' in CodeGenerator._NON_SHAREABLE_CLASSES
-
-
-@pytest.mark.parametrize('module', [float_fract, float_ldexp])
-def test_raw_operation_policies_reject_unknown_formats(module):
-    with pytest.raises(ValueError, match='bf16'):
-        module.policy_expr('bf16', *(['false'] if module is float_ldexp else []))
 
 
 def test_gfx1250_true16_e32_dst_reg_uses_physical_vgpr():

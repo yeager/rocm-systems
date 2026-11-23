@@ -85,6 +85,7 @@ LOOP_CASES = (
 
 def required_names():
     names = {
+        'ConSanPrefillHarness.Guards',
         'ConSanConfigure.EnvironmentOnlySdk',
         'ConSanRuntimeIntegration.Guards',
         'ConSanRuntime.SymbolBoundary',

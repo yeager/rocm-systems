@@ -3,6 +3,8 @@
 
 """Unit tests for ML API call-tree processing."""
 
+import sys
+
 import pandas as pd
 import pytest
 
@@ -690,3 +692,74 @@ def test_copy_matched_operator_subtree_keeps_same_backend_descendants_across_bri
     assert list(copied_bridge.children[0].kernels) == ["descendant"]
     assert copied_root.kernel_launches == 2
     assert copied_root.total_duration_ms == pytest.approx(0.00004)
+
+
+def chain_depth(root: CallTreeNode) -> int:
+    depth = 1
+    while root.children:
+        root = root.children[0]
+        depth += 1
+    return depth
+
+
+def test_traversals_handle_nesting_deeper_than_the_recursion_limit():
+    """A 1,100-level chain on each of two threads, joined by launcher attach."""
+    nesting = sys.getrecursionlimit() + 100
+    scale = 10_000
+    rows = [
+        parsed_marker_row(
+            "region",
+            -1,
+            scale * 2 * nesting + 1,
+            file_name="net.py",
+            line_number=1,
+            backend="user",
+        )
+    ]
+    rows += [
+        parsed_marker_row(
+            f"op{level}",
+            scale * level,
+            scale * (2 * nesting - level),
+            file_name="net.py",
+            line_number=1,
+        )
+        for level in range(nesting)
+    ]
+    rows += [
+        parsed_marker_row(
+            f"worker{level}",
+            scale * nesting - scale // 2 + level,
+            scale * nesting + scale // 2 - level,
+            thread_id=2,
+            kernel_names=["worker_kernel"] if level == nesting - 1 else None,
+            kernel_starts=[scale * nesting] if level == nesting - 1 else None,
+            kernel_ends=[scale * nesting + 1] if level == nesting - 1 else None,
+            launcher_thread_id="1" if level == nesting - 1 else "",
+        )
+        for level in range(nesting)
+    ]
+    rows[nesting]["Kernel_Names"] = ["gemm"]
+    rows[nesting]["Kernel_Start_Timestamps"] = [scale * nesting]
+    rows[nesting]["Kernel_End_Timestamps"] = [scale * nesting + 1]
+    for row in rows:
+        row["Kernel_Pmc_Group_Keys"] = [("gpu", 1)] * len(row["Kernel_Names"])
+    trace_df = pd.DataFrame(rows)
+    forest = nest_marker_intervals(trace_df)
+    errors = []
+
+    attach_unlocated_trees_by_launcher_thread(forest, errors)
+    validate_all_markers_nested(trace_df, forest)
+    prune_cpu_only_call_trees(forest)
+    region = forest["1"][0]
+    rolled = rollup_node_stats(region)
+    twin = copy_matched_operator_subtree(forest, [region])["1"][0]
+    folded = fold_identical_sibling_subtrees([region, twin])
+
+    assert errors == []
+    assert list(forest) == ["1"]
+    assert chain_depth(region) == 2 * nesting + 1
+    assert rolled.launches == 2
+    assert len(folded) == 1
+    assert chain_depth(folded[0]) == 2 * nesting + 1
+    assert folded[0].kernel_launches == 4

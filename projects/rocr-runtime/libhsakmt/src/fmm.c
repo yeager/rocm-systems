@@ -5055,6 +5055,7 @@ static HSAKMT_STATUS fmm_register_user_memory(HsaKFDContext *ctx,
 	HSAuint32 page_offset = (HSAuint64)addr & (PAGE_SIZE-1);
 	HSAuint64 aligned_addr = (HSAuint64)addr - page_offset;
 	HSAuint64 aligned_size = PAGE_ALIGN_UP(page_offset + size);
+	bool readonly = flags.ui32.ReadOnly;
 	void *svm_addr;
 	HSAuint32 gpu_id;
 	vm_object_t *obj, *exist_obj;
@@ -5074,7 +5075,7 @@ static HSAKMT_STATUS fmm_register_user_memory(HsaKFDContext *ctx,
 	svm_addr = __fmm_allocate_device(ctx,
 			 gpu_id, NULL, aligned_size, aperture,
 			 &aligned_addr, KFD_IOC_ALLOC_MEM_FLAGS_USERPTR |
-			 KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE |
+			 (readonly ? 0 : KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE) |
 			 KFD_IOC_ALLOC_MEM_FLAGS_EXECUTABLE |
 			 (flags.ui32.CoarseGrain ? 0 : KFD_IOC_ALLOC_MEM_FLAGS_COHERENT) |
 			 (flags.ui32.ExtendedCoherent ? KFD_IOC_ALLOC_MEM_FLAGS_EXT_COHERENT : 0),
@@ -5092,7 +5093,12 @@ static HSAKMT_STATUS fmm_register_user_memory(HsaKFDContext *ctx,
 	 * object already after the vm_find_object.
 	 */
 	exist_obj = vm_find_object_by_userptr(aperture, addr, size);
-	if (exist_obj) {
+	if (exist_obj && exist_obj->mflags.ui32.ReadOnly && !readonly) {
+		pr_debug("Cannot register read-only userptr %p as writable (raced)\n", addr);
+		pthread_mutex_unlock(&aperture->fmm_mutex);
+		__fmm_release(ctx, obj, aperture);
+		return HSAKMT_STATUS_MEMORY_ALREADY_REGISTERED;
+	} else if (exist_obj) {
 		++exist_obj->registration_count;
 	} else {
 		uint64_t extent;
@@ -5157,6 +5163,11 @@ HSAKMT_STATUS hsakmt_fmm_register_memory(HsaKFDContext *ctx,
 		pthread_mutex_lock(&aperture->fmm_mutex);
 		/* fall through for registered device ID array setup */
 	} else if (object->userptr) {
+		if (object->mflags.ui32.ReadOnly && !flags.ui32.ReadOnly) {
+			pr_debug("Cannot register read-only userptr %p as writable\n", address);
+			pthread_mutex_unlock(&aperture->fmm_mutex);
+			return HSAKMT_STATUS_MEMORY_ALREADY_REGISTERED;
+		}
 		/* Update an existing userptr */
 		++object->registration_count;
 	} else {

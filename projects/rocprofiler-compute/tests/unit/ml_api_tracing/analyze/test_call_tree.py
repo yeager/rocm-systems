@@ -702,64 +702,50 @@ def chain_depth(root: CallTreeNode) -> int:
     return depth
 
 
+def nested_rows(name, depth, start, end, **options):
+    """Marker rows that each sit one time unit inside the previous row."""
+    return [
+        parsed_marker_row(f"{name}{level}", start + level, end - level, **options)
+        for level in range(depth)
+    ]
+
+
+def with_kernel(row, kernel_name, start, end):
+    """Give a marker row one kernel dispatch."""
+    row["Kernel_Names"] = [kernel_name]
+    row["Kernel_Start_Timestamps"] = [start]
+    row["Kernel_End_Timestamps"] = [end]
+    row["Kernel_Pmc_Group_Keys"] = [("gpu", 1)]
+    return row
+
+
 def test_traversals_handle_nesting_deeper_than_the_recursion_limit():
-    """A 1,100-level chain on each of two threads, joined by launcher attach."""
-    nesting = sys.getrecursionlimit() + 100
-    scale = 10_000
-    rows = [
-        parsed_marker_row(
-            "region",
-            -1,
-            scale * 2 * nesting + 1,
-            file_name="net.py",
-            line_number=1,
-            backend="user",
-        )
-    ]
-    rows += [
-        parsed_marker_row(
-            f"op{level}",
-            scale * level,
-            scale * (2 * nesting - level),
-            file_name="net.py",
-            line_number=1,
-        )
-        for level in range(nesting)
-    ]
-    rows += [
-        parsed_marker_row(
-            f"worker{level}",
-            scale * nesting - scale // 2 + level,
-            scale * nesting + scale // 2 - level,
-            thread_id=2,
-            kernel_names=["worker_kernel"] if level == nesting - 1 else None,
-            kernel_starts=[scale * nesting] if level == nesting - 1 else None,
-            kernel_ends=[scale * nesting + 1] if level == nesting - 1 else None,
-            launcher_thread_id="1" if level == nesting - 1 else "",
-        )
-        for level in range(nesting)
-    ]
-    rows[nesting]["Kernel_Names"] = ["gemm"]
-    rows[nesting]["Kernel_Start_Timestamps"] = [scale * nesting]
-    rows[nesting]["Kernel_End_Timestamps"] = [scale * nesting + 1]
-    for row in rows:
-        row["Kernel_Pmc_Group_Keys"] = [("gpu", 1)] * len(row["Kernel_Names"])
-    trace_df = pd.DataFrame(rows)
+    """Two chains deeper than the recursion limit, joined by launcher attach."""
+    depth = sys.getrecursionlimit() + 100
+    region = parsed_marker_row(
+        "region", -1, 4 * depth + 1, file_name="net.py", backend="user"
+    )
+    main_chain = nested_rows("op", depth, 0, 4 * depth, file_name="net.py")
+    worker_chain = nested_rows("worker", depth, depth, 3 * depth, thread_id=2)
+    with_kernel(main_chain[-1], "gemm", 2 * depth, 2 * depth + 1)
+    with_kernel(worker_chain[-1], "worker_kernel", 2 * depth, 2 * depth + 1)
+    worker_chain[-1]["launcher_thread_id"] = "1"
+    trace_df = pd.DataFrame([region, *main_chain, *worker_chain])
     forest = nest_marker_intervals(trace_df)
     errors = []
 
     attach_unlocated_trees_by_launcher_thread(forest, errors)
     validate_all_markers_nested(trace_df, forest)
     prune_cpu_only_call_trees(forest)
-    region = forest["1"][0]
-    rolled = rollup_node_stats(region)
-    twin = copy_matched_operator_subtree(forest, [region])["1"][0]
-    folded = fold_identical_sibling_subtrees([region, twin])
+    root = forest["1"][0]
+    rolled = rollup_node_stats(root)
+    twin = copy_matched_operator_subtree(forest, [root])["1"][0]
+    folded = fold_identical_sibling_subtrees([root, twin])
 
     assert errors == []
     assert list(forest) == ["1"]
-    assert chain_depth(region) == 2 * nesting + 1
+    assert chain_depth(root) == 2 * depth + 1
     assert rolled.launches == 2
     assert len(folded) == 1
-    assert chain_depth(folded[0]) == 2 * nesting + 1
+    assert chain_depth(folded[0]) == 2 * depth + 1
     assert folded[0].kernel_launches == 4

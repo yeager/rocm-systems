@@ -492,7 +492,7 @@ def print_operator_node(
         # Steps pop in reverse, so the kernel lines print after the children.
         steps.append(_PrintStep(step.node, children_indent, kernels_only=True))
         has_kernels = len(step.node.kernels) > 0
-        for index in range(len(children) - 1, -1, -1):
+        for index in reversed(range(len(children))):
             child_is_last = index == len(children) - 1 and not has_kernels
             steps.append(_PrintStep(children[index], children_indent, child_is_last))
 

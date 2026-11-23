@@ -59,6 +59,7 @@ def rollup_node_stats(node: CallTreeNode) -> NodeRollup:
     """
     rollups: Dict[int, NodeRollup] = {}
     for current in _iter_post_order(node):
+        # pop frees each child's rollup once its parent has used it.
         rollups[id(current)] = _roll_up_from_child_rollups(
             current, [rollups.pop(id(child)) for child in current.children]
         )
@@ -610,6 +611,8 @@ def _fold_siblings(
     """
     root_level = _FoldLevel(_group_by_shape(nodes, shape_keys))
     levels = [root_level]
+    # Top-down: the list grows while it is walked, because each level adds its
+    # child levels to the end.
     for level in levels:
         for group in level.groups:
             level.merged.append(_merge_group_node(group))
@@ -622,6 +625,8 @@ def _fold_siblings(
                 )
             )
         levels.extend(level.child_levels)
+    # Bottom-up: a child level always comes after its parent in the list, so
+    # walking it backwards finishes the children first.
     for level in reversed(levels):
         folded: List[Tuple[CallTreeNode, NodeRollup]] = []
         for merged, child_level in zip(level.merged, level.child_levels):
@@ -679,6 +684,7 @@ def _copy_subtree(node: CallTreeNode) -> CallTreeNode:
     """Copy a node and its descendants; the copies share the kernel stats."""
     copies: Dict[int, CallTreeNode] = {}
     for current in _iter_post_order(node):
+        # pop frees each child's copy once its parent has used it.
         copies[id(current)] = replace(
             current, children=[copies.pop(id(child)) for child in current.children]
         )
@@ -721,6 +727,7 @@ def _copy_scoped_operator_node(
                 for child in reversed(current.children)
             )
             continue
+        # pop frees each child's result once its parent has used it.
         kept_children = [
             scoped_child
             for child in current.children

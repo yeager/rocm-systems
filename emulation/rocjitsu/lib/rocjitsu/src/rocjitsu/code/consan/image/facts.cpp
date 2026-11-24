@@ -63,6 +63,32 @@ std::optional<ScopeKind> selected_scope(const ImageFacts &image) {
   return scope;
 }
 
+Digest image_selection_profile_digest(const ImageFacts &image) {
+  const std::optional<ScopeKind> scope = selected_scope(image);
+  std::vector<EntryKey> keys;
+  for (const ImageEntryFacts &entry : image.entries)
+    if (entry.selected)
+      keys.push_back(entry.key);
+  if (scope)
+    return selection_profile_digest(keys, *scope);
+  util::Sha256 hash;
+  hash.update("consan-image-mixed-lds-selection-v1");
+  std::array<uint8_t, 4> count{};
+  wire::write_u32(count, 0, static_cast<uint32_t>(keys.size()));
+  hash.update(count.data(), count.size());
+  for (const ImageEntryFacts &entry : image.entries) {
+    if (!entry.selected)
+      continue;
+    std::array<uint8_t, 12> identity{};
+    wire::write_u64(identity, 0, entry.key);
+    wire::write_u32(identity, 8, static_cast<uint32_t>(entry.selected->scope));
+    hash.update(identity.data(), identity.size());
+    const Digest options = profile_options_digest(entry.selected->scope);
+    hash.update(options.data(), options.size());
+  }
+  return hash.finish();
+}
+
 const ImageEntryFacts *find_image_entry(const ImageFacts &image, EntryKey key) {
   const std::vector<ImageEntryFacts>::const_iterator found =
       std::ranges::lower_bound(image.entries, key, {}, &ImageEntryFacts::key);
@@ -247,10 +273,13 @@ Result validate_image_facts(const ImageFacts &image, util::DiagnosticEmitter dia
         return diagnostic.emit() << "overlapping image entry ownership";
   }
   const std::optional<ScopeKind> scope = selected_scope(image);
-  if (!scope)
+  if (selected_keys.empty())
     return diagnostic.emit() << "selected entries must share one qualified scope";
-  if (selected_keys.empty() ||
-      image.selection_profile != selection_profile_digest(selected_keys, *scope))
+  if (!scope && std::ranges::any_of(image.entries, [](const ImageEntryFacts &entry) {
+        return entry.selected && entry.selected->scope == ScopeKind::ExecutionTrace;
+      }))
+    return diagnostic.emit() << "trace and LDS entries cannot share one prepared image";
+  if (selected_keys.empty() || image.selection_profile != image_selection_profile_digest(image))
     return diagnostic.emit() << "image selection profile differs from entries";
   return Result::success();
 }

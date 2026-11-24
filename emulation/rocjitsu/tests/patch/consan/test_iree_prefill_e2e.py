@@ -3,6 +3,7 @@
 
 """Check wrapper evidence and replay cleanup without IREE or a GPU."""
 
+from copy import deepcopy
 from pathlib import Path
 import tempfile
 import unittest
@@ -104,6 +105,101 @@ def lds_analysis():
 
 
 class PrefillEvidence(unittest.TestCase):
+    def test_all_image_evidence_requires_every_attempt_and_actual_lds_observations(
+        self,
+    ):
+        native = lds_analysis()
+        native['entries'][0]['entry'] = prefill.LDS_FIRST_MATMUL
+        native['entries'][1]['entry'] = prefill.LDS_MATMUL
+        native['executions'] = native['executions'][:4]
+        for execution in native['executions']:
+            execution.update(
+                entry=prefill.LDS_FIRST_MATMUL,
+                workgroup_count=4,
+                valid_observations=9216,
+                lost_occurrences=1152,
+                address_group_exhaustion=1152,
+            )
+        model_entries = [
+            dict(
+                entry,
+                disposition=(
+                    'instrumented'
+                    if entry['disposition'] == 'selected'
+                    else 'native_uncovered'
+                ),
+                reason_code=(
+                    'none'
+                    if entry['disposition'] == 'selected'
+                    else 'unsupported_instruction'
+                ),
+                reason='' if entry['disposition'] == 'selected' else 'outside subset',
+            )
+            for entry in native['entries']
+        ]
+        model_entries[1]['reason_code'] = 'unsupported_control_transfer_range'
+        index = {
+            'scope': 'provided_application_images',
+            'images': [
+                {
+                    'preparation': {
+                        'original_sha256': '11' * 32,
+                        'requested': 55,
+                        'entries': model_entries,
+                    }
+                },
+                {
+                    'preparation': {
+                        'original_sha256': '22' * 32,
+                        'requested': 13,
+                        'entries': [
+                            {
+                                'entry': f'helper_{index}',
+                                'disposition': 'native_uncovered',
+                                'reason_code': 'unsupported_entry',
+                                'reason': 'no LDS sites',
+                            }
+                            for index in range(13)
+                        ],
+                    }
+                },
+            ],
+        }
+        analysis = {
+            'scope': 'provided_application_images',
+            'whole_application_coverage': 'not_established',
+            'lds_analysis': 'performed',
+            'lds_observations_present': True,
+            'coverage_complete': False,
+            'images': [
+                {'original_sha256': '11' * 32, 'analysis': native},
+                {'original_sha256': '22' * 32, 'analysis': None},
+            ],
+        }
+        prefill.validate_all_images(index, analysis)
+        for field, value in (
+            ('scope', 'application'),
+            ('lds_analysis', 'not_performed'),
+            ('lds_observations_present', False),
+            ('coverage_complete', True),
+        ):
+            changed = deepcopy(analysis)
+            changed[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                prefill.validate_all_images(index, changed)
+        changed = deepcopy(index)
+        changed['images'][0]['preparation']['requested'] = 1
+        with self.assertRaisesRegex(ValueError, 'every model and helper'):
+            prefill.validate_all_images(changed, analysis)
+        changed = deepcopy(analysis)
+        changed['images'].pop()
+        with self.assertRaisesRegex(ValueError, 'dropped a provided image'):
+            prefill.validate_all_images(index, changed)
+        changed = deepcopy(analysis)
+        changed['images'][0]['analysis']['executions'][0]['valid_observations'] = 0
+        with self.assertRaisesRegex(ValueError, 'observation/loss'):
+            prefill.validate_all_images(index, changed)
+
     def test_lds_analysis_requires_observations_for_every_selected_execution(self):
         prefill.validate_lds(lds_analysis())
         for field, value in (

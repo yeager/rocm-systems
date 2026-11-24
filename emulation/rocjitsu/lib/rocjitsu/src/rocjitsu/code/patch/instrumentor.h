@@ -70,6 +70,8 @@
 
 namespace rocjitsu {
 
+enum class TrampolineBuildErrorCode;
+
 class AmdGpuCodeObject;
 class BasicBlock;
 class Decoder;
@@ -263,6 +265,8 @@ struct InstrumentedCodeObject {
   /// Present for source-facts or checked-edit failures; errors retains the diagnostic.
   /// Request-shape and option errors use errors only.
   std::optional<TextEditError> edit_error;
+  /// Present only when every accumulated failure is the same typed branch-capacity limit.
+  std::optional<TrampolineBuildErrorCode> trampoline_error;
   std::vector<std::string> warnings;
   std::vector<InstrumentedSite> sites;
   /// Legacy-path resources; zero for explicit entry requests, even one selection.

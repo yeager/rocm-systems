@@ -136,6 +136,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 if(RJ_BUILD_CONSAN_COMPILER)
+    configure_file(
+        consan_prepare_application.py
+        consan_prepare_application.py
+        COPYONLY
+    )
     add_executable(rj_consan_prepare rj_consan_prepare.cpp)
     target_link_libraries(
         rj_consan_prepare
@@ -145,6 +150,11 @@ if(RJ_BUILD_CONSAN_COMPILER)
 endif()
 
 if(RJ_BUILD_CONSAN_ANALYZER)
+    configure_file(
+        consan_analyze_application.py
+        consan_analyze_application.py
+        COPYONLY
+    )
     add_executable(rj_consan_analyze rj_consan_analyze.cpp)
     target_link_libraries(rj_consan_analyze PRIVATE rocjitsu_consan_analysis)
     rj_configure_target(rj_consan_analyze WARNINGS)

@@ -3553,6 +3553,7 @@ InstrumentedCodeObjectDebug Instrumentor::patch_entries() {
     if (!planned.errors.empty()) {
       result.errors = std::move(planned.errors);
       result.edit_error = std::move(planned.edit_error);
+      result.trampoline_error = planned.trampoline_error;
       return result;
     }
     cursor = plans[index].cave_end;
@@ -4134,6 +4135,7 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
 
   std::vector<AppliedSite> applied;
   applied.reserve(sites.size());
+  size_t range_errors = 0;
   // Allocate offsets for each site. Trampoline size is highly dependent on the
   // plan (inlined assembly? spills? arguments passed?) so set up the plan first.
   // Then build the trampoline based on the plan.
@@ -4141,6 +4143,7 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
     const uint64_t trampoline_offset = cave_cursor;
     std::string err;
     std::optional<TrampolineBytes> bytes;
+    TrampolineBuildErrorCode build_error = TrampolineBuildErrorCode::InvalidPlan;
     AppliedSite record{&site, trampoline_offset, {}};
 
     // If this site calls a probe, then we need to know what registers it will
@@ -4396,7 +4399,7 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
       }
 
       // Get trampoline from TrampolineBuilder
-      bytes = TrampolineBuilder::emit_probe_call(plan, &err);
+      bytes = TrampolineBuilder::emit_probe_call(plan, &err, &build_error);
       if (plan.returns_to_kernel)
         record.return_target = plan.return_target;
       record.is_probe_call = true;
@@ -4419,12 +4422,14 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
         result.errors.push_back(std::move(err));
         continue;
       }
-      bytes = TrampolineBuilder::build(plan, &err);
+      bytes = TrampolineBuilder::build(plan, &err, &build_error);
       if (plan.returns_to_kernel)
         record.return_target = plan.return_target;
     }
 
     if (!bytes) {
+      if (build_error == TrampolineBuildErrorCode::UnsupportedControlTransferRange)
+        ++range_errors;
       result.errors.push_back(std::move(err));
       continue;
     }
@@ -4436,8 +4441,11 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
   }
 
   // All-or-nothing: bail before mutating the patcher if any site failed.
-  if (!result.errors.empty())
+  if (!result.errors.empty()) {
+    if (range_errors == result.errors.size())
+      result.trampoline_error = TrampolineBuildErrorCode::UnsupportedControlTransferRange;
     return result;
+  }
 
   if (entry_plan_ != nullptr) {
     entry_plan_->kernel = kernels.front();

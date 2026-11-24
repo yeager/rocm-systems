@@ -36,6 +36,7 @@ foreach(
         unreachable-pc
         trace-exits
         unsupported
+        unsupported-only
 )
     set(_variant_object ${_fixture_dir}/multi-entry-${_variant}.o)
     set(_variant_image ${_fixture_dir}/multi-entry-${_variant}.hsaco)
@@ -52,6 +53,8 @@ foreach(
         set(_variant_defines -DMK_TRACE_EXIT_STRESS=1)
     elseif(_variant STREQUAL "unsupported")
         set(_variant_defines -DMK_UNSUPPORTED_C=1)
+    elseif(_variant STREQUAL "unsupported-only")
+        set(_variant_defines -DMK_UNSUPPORTED_C=1 -DMK_ENTRY_MASK=4)
     endif()
     add_custom_command(
         OUTPUT ${_variant_object}

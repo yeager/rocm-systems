@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
     if (layout.failed())
       return 2;
     std::cout << "{\"serial\":" << execution.serial << ",\"slot\":" << execution.storage_slot
+              << ",\"completion\":" << execution.completion
               << ",\"entry_key\":" << execution.entry_key
               << ",\"generation\":" << execution.storage_generation << ",\"report_address\":"
               << *wire::read_u64(execution.context, wire::kContextReportPointer)

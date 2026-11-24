@@ -45,7 +45,7 @@ FailureOr<LdsRaceResult> analyze_capture(const Capture &capture, const AnalysisO
   result.execution_conditions = capture.header.execution_conditions;
   result.target = capture.header.image.target;
   result.wave_size = capture.header.image.wave_size;
-  result.scope = *selected_scope(capture.header.image);
+  result.scope = selected_scope(capture.header.image);
   result.has_dual_ranges =
       std::ranges::any_of(capture.header.image.entries, [](const ImageEntryFacts &entry) {
         return entry.selected &&

@@ -83,6 +83,29 @@ if(AMDCXX AND EXISTS "${ROCM_PATH}/lib/llvm/bin/ld.lld")
     list(APPEND _fixtures ${_fixture_dir}/renamed.hsaco)
     include(target_fixtures.cmake)
     include(multi_entry.cmake)
+    set(_composition_object ${_fixture_dir}/compilation-limits.o)
+    set(_composition_image ${_fixture_dir}/compilation-limits.hsaco)
+    add_custom_command(
+        OUTPUT ${_composition_object}
+        COMMAND
+            ${CMAKE_CXX_COMPILER_LAUNCHER} ${AMDCXX} -x assembler-with-cpp
+            -target amdgcn-amd-amdhsa -mcpu=gfx1250 -mcode-object-version=5
+            -mno-wavefrontsize64 -c
+            ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compilation_limits.s -o
+            ${_composition_object}
+        DEPENDS fixtures/compilation_limits.s ${AMDCXX}
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT ${_composition_image}
+        COMMAND
+            ${ROCM_PATH}/lib/llvm/bin/ld.lld -shared ${_composition_object} -o
+            ${_composition_image}
+        DEPENDS ${_composition_object}
+        VERBATIM
+    )
+    add_custom_target(consan_composition_fixture DEPENDS ${_composition_image})
+    add_dependencies(consan_multi_entry_fixture consan_composition_fixture)
     target_sources(consan_input_test PRIVATE target_test.cpp)
     add_custom_target(consan_original_fixtures DEPENDS ${_fixtures})
     add_dependencies(consan_input_test consan_original_fixtures)
@@ -127,6 +150,25 @@ set(RJ_CONSAN_TEST_ARTIFACT_ROOT
     "Directory for preserved ConSan integration evidence"
 )
 if(TARGET consan_original_fixtures)
+    add_test(
+        NAME ConSanPrepareCli.CompositionCapacity
+        COMMAND
+            ${Python3_EXECUTABLE} -B
+            ${CMAKE_CURRENT_SOURCE_DIR}/prepare_cli_composition_test.py
+            --prepare $<TARGET_FILE:rj_consan_prepare> --fixture
+            ${_composition_image} --root ${RJ_CONSAN_TEST_ARTIFACT_ROOT}
+    )
+    add_test(
+        NAME ConSanApplication.AllImagesPreparation
+        COMMAND
+            ${Python3_EXECUTABLE} -B
+            ${CMAKE_CURRENT_SOURCE_DIR}/application_coordinator_test.py
+            --prepare $<TARGET_FILE:rj_consan_prepare> --coordinator
+            ${PROJECT_SOURCE_DIR}/tools/consan_prepare_application.py
+            --analyze-coordinator
+            ${PROJECT_SOURCE_DIR}/tools/consan_analyze_application.py --fixtures
+            ${_fixture_dir} --artifacts ${RJ_CONSAN_TEST_ARTIFACT_ROOT}
+    )
     add_test(
         NAME ConSanPrepareCli.BestEffortCoverage
         COMMAND
@@ -353,6 +395,7 @@ if(RJ_BUILD_CONSAN_RUNTIME AND TARGET consan_original_fixtures)
             CONSAN_ARTIFACT_FIXTURE="${_artifact}"
             CONSAN_MULTI_ORIGINAL_FIXTURE="${_fixture_dir}/multi-entry.hsaco"
             CONSAN_MULTI_ARTIFACT_FIXTURE="${_multi_artifact}"
+            CONSAN_APPLICATION_BARRIER_ORIGINAL="${_fixture_dir}/targets/gfx1100/wave32/native-15.hsaco"
             CONSAN_APPLICATION_BARRIER_ARTIFACT="${_application_barrier_artifact}"
             CONSAN_APPLICATION_LOOP_ARTIFACT="${_application_loop_artifact}"
             CONSAN_NATIVE_SHAPE_ORIGINAL_FIXTURE="${_fixture_dir}/multi-entry-abi.hsaco"
@@ -720,6 +763,33 @@ endif()
 
 if(TARGET consan_multi_entry_runner AND TARGET rj_consan_analyze)
     add_dependencies(consan_multi_entry_runner consan_multi_entry_fixture)
+    add_test(
+        NAME ConSanApplicationSim.AllImagesAllEntries
+        COMMAND
+            ${Python3_EXECUTABLE} -B
+            ${CMAKE_CURRENT_SOURCE_DIR}/consan_all_images_e2e.py --prepare
+            $<TARGET_FILE:rj_consan_prepare> --runner
+            $<TARGET_FILE:consan_multi_entry_runner> --inspect
+            $<TARGET_FILE:consan_capture_inspect> --analyze
+            $<TARGET_FILE:rj_consan_analyze> --plugin
+            $<TARGET_FILE:hsa_consan_testable> --launcher
+            $<TARGET_FILE:rocjitsu_bin> --coordinator
+            ${PROJECT_SOURCE_DIR}/tools/consan_prepare_application.py
+            --analyze-coordinator
+            ${PROJECT_SOURCE_DIR}/tools/consan_analyze_application.py --first
+            ${_fixture_dir}/multi-entry.hsaco --second
+            ${_fixture_dir}/multi-entry-mixed.hsaco --config
+            ${PROJECT_SOURCE_DIR}/configs/gfx1250_mi455x.json --root
+            ${RJ_CONSAN_TEST_ARTIFACT_ROOT} --source ${PROJECT_SOURCE_DIR}
+    )
+    rj_test_runtime_dir_env(_runtime ConSanApplicationSim.AllImagesAllEntries)
+    set_tests_properties(
+        ConSanApplicationSim.AllImagesAllEntries
+        PROPERTIES
+            TIMEOUT 240
+            LABELS "consan;simulator;required-consan"
+            ENVIRONMENT "${_runtime}"
+    )
     foreach(
         _profile
         IN

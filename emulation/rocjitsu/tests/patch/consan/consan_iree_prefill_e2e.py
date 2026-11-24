@@ -28,6 +28,7 @@ INPUTS = {
 SCATTER = 'prefill_bs1$async_dispatch_8_scatter_Dx32x4x32xf16_dispatch_tensor_store'
 ELEMENTWISE = 'prefill_bs1$async_dispatch_9_elementwise_D_i64'
 LDS_MATMUL = 'prefill_bs1$async_dispatch_3_matmul_Dx128x256_f16xf16xf32'
+LDS_FIRST_MATMUL = 'prefill_bs1$async_dispatch_2_matmul_Dx256x256_f16xf16xf32'
 SELECTED = (SCATTER, ELEMENTWISE)
 SEQUENCE = (SCATTER, ELEMENTWISE, SCATTER) * 3
 
@@ -205,6 +206,101 @@ def validate_lds(analysis, exit_code=None):
     return selected
 
 
+def validate_all_images(index, analysis):
+    require(
+        index['scope'] == 'provided_application_images' and len(index['images']) == 2,
+        'all-image inventory differs from the model and helper inputs',
+    )
+    reports = [image['preparation'] for image in index['images']]
+    require(
+        sorted(report['requested'] for report in reports) == [13, 55],
+        'all-image preparation did not attempt every model and helper entry',
+    )
+    require(
+        all(
+            report['requested'] == len(report['entries']) and report['requested'] > 0
+            for report in reports
+        ),
+        'all-image preparation omitted entry outcomes',
+    )
+    models = [
+        report
+        for report in reports
+        if any(entry['entry'] == LDS_MATMUL for entry in report['entries'])
+    ]
+    require(
+        len(models) == 1 and models[0]['requested'] == 55,
+        'all-image preparation did not attempt all model entries',
+    )
+    require(
+        all(
+            entry['reason_code'] != 'none' and bool(entry['reason'])
+            for report in reports
+            for entry in report['entries']
+            if entry['disposition'] == 'native_uncovered'
+        ),
+        'skipped entry has no owning qualification reason',
+    )
+    require(
+        analysis['scope'] == 'provided_application_images'
+        and analysis['whole_application_coverage'] == 'not_established'
+        and analysis['lds_analysis'] == 'performed'
+        and analysis['lds_observations_present'],
+        'all-image result lacks scoped LDS analysis evidence',
+    )
+    require(
+        {report['original_sha256'] for report in reports}
+        == {image['original_sha256'] for image in analysis['images']},
+        'all-image analysis dropped a provided image',
+    )
+    model = next(
+        image
+        for image in analysis['images']
+        if image['original_sha256'] == models[0]['original_sha256']
+    )
+    require(model['analysis'] is not None, 'all-image model has no selected capture')
+    selected = {
+        entry['entry']
+        for entry in models[0]['entries']
+        if entry['disposition'] == 'instrumented'
+    }
+    require(
+        selected == {LDS_FIRST_MATMUL}, 'ordered all-image retained selection differs'
+    )
+    incompatible = next(
+        entry for entry in models[0]['entries'] if entry['entry'] == LDS_MATMUL
+    )
+    require(
+        incompatible['disposition'] == 'native_uncovered'
+        and incompatible['reason_code'] == 'unsupported_control_transfer_range',
+        'combined branch capacity must retain its owning native-skip reason',
+    )
+    executions = model['analysis']['executions']
+    require(
+        len(executions) == 4
+        and all(row['entry'] == LDS_FIRST_MATMUL for row in executions),
+        'all-image retained matmul execution count differs',
+    )
+    require(
+        all(
+            row['workgroup_count'] == 4
+            and row['waves_per_workgroup'] == 4
+            and row['valid_observations'] == 9216
+            and row['lost_occurrences'] == 1152
+            and row['address_group_exhaustion'] == 1152
+            and row['synchronization_loss'] == 0
+            and row['integrity_events'] == 0
+            and row['rejected_records'] == 0
+            and not row['coverage_complete']
+            for row in executions
+        ),
+        'all-image LDS matmul observation/loss evidence differs',
+    )
+    require(
+        not analysis['coverage_complete'], 'bounded loss cannot claim complete coverage'
+    )
+
+
 class Commands:
     def __init__(self, directory, source, environment, timeout):
         self.directory = directory
@@ -271,6 +367,7 @@ def offline_replay(
     *,
     allowed_exits=(0,),
     expected_exit=None,
+    arguments=(),
 ):
     # Test-owned copies only: no upstream checkout or shared inputs are renamed.
     hidden = [(path, path.with_name(path.name + '.hidden')) for path in paths]
@@ -285,7 +382,9 @@ def offline_replay(
             not any(path.exists() for path in paths),
             'replay input paths are still available',
         )
-        after = commands.run(stage, [analyzer, capture], allowed_exits=allowed_exits)
+        after = commands.run(
+            stage, [analyzer, capture, *arguments], allowed_exits=allowed_exits
+        )
         if expected_exit is not None:
             require(
                 commands.records[-1]['exit'] == expected_exit,
@@ -517,6 +616,48 @@ def run(args):
         'LDS capture image/selection identity differs',
     )
     validate_lds(lds_analysis, lds_exit)
+    application_artifacts = directory / 'all-images'
+    coordinator = args.source / 'tools/consan_prepare_application.py'
+    aggregate_analyzer = args.source / 'tools/consan_analyze_application.py'
+    commands.run(
+        'prepare-all-images',
+        [
+            sys.executable,
+            coordinator,
+            '--prepare',
+            tools['prepare'],
+            '--target',
+            'gfx1250',
+            '--images-dir',
+            images,
+            '--output',
+            application_artifacts,
+            '--timeout',
+            max(1, math.ceil(commands.deadline - time.monotonic())),
+        ],
+    )
+    index_path = application_artifacts / 'application.json'
+    application_index = json.loads(index_path.read_text())
+    bindings = json.loads(
+        (application_artifacts / 'launch-environment.json').read_text()
+    )
+    all_output, all_oracle = application(
+        'all-images-instrumented',
+        {'HSA_TOOLS_LIB': str(tools['plugin'])} | bindings,
+        with_plugin=True,
+    )
+    require(
+        (baseline / 'logits.npy').read_bytes()
+        == (all_output / 'logits.npy').read_bytes(),
+        'all-image instrumented complete logits differ from original baseline',
+    )
+    all_before = commands.run(
+        'analyze-all-images',
+        [aggregate_analyzer, index_path, '--analyzer', tools['analyze']],
+        allowed_exits=(1,),
+    )
+    all_analysis = json.loads(all_before)
+    validate_all_images(application_index, all_analysis)
     unavailable = (inputs, artifact, lds_artifact)
     offline_replay(commands, tools['analyze'], capture, unavailable, before)
     offline_replay(
@@ -529,6 +670,21 @@ def run(args):
         allowed_exits=(0, 1),
         expected_exit=lds_exit,
     )
+    offline_replay(
+        commands,
+        aggregate_analyzer,
+        index_path,
+        (
+            *unavailable,
+            application_artifacts / 'images',
+            application_artifacts / 'application.bin',
+        ),
+        all_before,
+        stage='fresh-all-image-analysis-without-inputs',
+        allowed_exits=(1,),
+        expected_exit=1,
+        arguments=('--analyzer', tools['analyze']),
+    )
     (directory / 'result.json').write_text(
         json.dumps(
             {
@@ -538,6 +694,8 @@ def run(args):
                 'analysis': analysis,
                 'lds_instrumented': lds_oracle,
                 'lds_analysis': lds_analysis,
+                'all_images_instrumented': all_oracle,
+                'all_images_analysis': all_analysis,
                 'fresh_replay_identical': True,
                 'cpu_thread_budget': args.cpu_thread_budget,
                 'stage_seconds': {

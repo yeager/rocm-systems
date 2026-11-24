@@ -1247,6 +1247,7 @@ add_executable(
     code/consan/contract_test.cpp
     code/consan/capture_test.cpp
     code/consan/encoding_test.cpp
+    code/consan/application_catalog_test.cpp
     code/consan/image_facts_test.cpp
 )
 target_link_libraries(

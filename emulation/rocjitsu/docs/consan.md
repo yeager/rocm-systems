@@ -77,14 +77,17 @@ The three-stage split has three purposes:
 
 ### Offline preparation
 
-`rj_consan_prepare` qualifies requested entries independently. An unsupported
+`rj_consan_prepare` qualifies requested entries independently. With no `--entry`
+options it inventories and attempts every entry in the original image. Repeated
+`--entry` options restrict preparation to that explicit subset. An unsupported
 entry remains native and uncovered; other qualified entries can still be
 instrumented in the same image. `preparation.json` records the original image
 SHA256, requested scope, exact requested entries, instrumented/skipped counts,
 and each skipped entry's reason code, instruction offset when available, and
-diagnostic. Its `requested_coverage` describes only the explicit request, not
-whole-application coverage. Invalid input images, unknown or duplicate entry
-names, exhausted budgets, and failed binary rewriting remain errors.
+diagnostic. Its `requested_coverage` describes this image's requested entries;
+it does not establish whole-application coverage. Invalid input images, unknown
+or duplicate entry names, exhausted budgets, and failed binary rewriting remain
+errors.
 
 When every requested entry is unsupported, preparation succeeds with an
 explicit `native_only` outcome and preserves the exact original bytes as
@@ -99,13 +102,94 @@ be instrumented. A skipped entry then fails preparation before publishing an
 artifact. The strict C++ `prepare_image()` API retains its existing behavior;
 `prepare_image_best_effort()` returns the owning coverage report and optional
 artifact. Binary rewriting and preservation validation use the same strict
-implementation for all entries that pass qualification.
+implementation for all entries that pass qualification. If the combined set
+exceeds the typed hardware branch-reach limit, best-effort preparation retries
+entries in requested order, retaining the most recent fully validated artifact
+and leaving an incompatible candidate native with its owning limit reason.
+This is a compilation capacity decision; arbitrary rewrite, preservation, and
+identity failures still fail the whole preparation. The strict API never retries
+or publishes a partial selection.
 
 Coverage degradation emits one warning summary, including with the default
 log-groups-OFF build. Per-entry qualification details use the compile-time
 `CONSAN` log group (`-DRJ_LOG_GROUPS=CONSAN`); the structured report is always
 written regardless of logging configuration. Intentionally unrequested entries
 do not count as skipped and do not generate degradation warnings.
+
+#### All supplied application images
+
+Use the application coordinator when a workload contains multiple code images:
+
+```sh
+python3 tools/consan_prepare_application.py \
+  --prepare build/tools/rj_consan_prepare --target gfx1250 \
+  --images-dir extracted-hsaco --output new-application-directory
+```
+
+It attempts all entries of every distinct `*.hsaco` in the supplied directory,
+including helper kernels, and deduplicates identical image bytes. Additional
+image paths can be supplied as positional arguments. This inventories the
+provided images; it does not extract embedded code objects or discover images
+that a future process might generate. Explicit `--entry` selection remains
+available on the single-image compiler CLI. `--require-all` makes any skipped
+entry fail preparation before a launch catalog is published.
+
+`launch-environment.json` contains `RJ_CONSAN_APPLICATION_PROFILE=1` and
+`RJ_CONSAN_APPLICATION_CATALOG=<absolute application.bin path>`. Add these two
+variables to the application's environment alongside `HSA_TOOLS_LIB`. Catalog
+configuration excludes the legacy artifact, selection-profile, native-images,
+and capture-path variables. Installation validates bounded, checksummed catalog
+records, exact original images, selected artifacts, profiles, and targets before
+installing hooks. An invalid catalog is an error, never a native fallback.
+An image absent from the catalog can run as its exact original after bounded
+native metadata admission. The runtime warns once for that image identity; it
+never treats an unlisted image as selected or supplies invented analysis facts.
+Unsupported native metadata and exhausted retention budgets remain admission
+errors. Images carrying the reserved `.rocjitsu.kernarg` prepared-wrapper section
+are rejected as native inputs: their probes require a selected wrapper/context,
+even when their identity is absent from the catalog. The immutable index describes `provided_application_images`, so aggregate
+results explicitly leave `whole_application_coverage` as `not_established`.
+Persisting owning coverage reasons for late images requires a runtime ledger.
+The adapter currently binds one code image per HSA executable. Distinct images
+and repeated loads are supported through separate executables.
+
+Each selected image has one capture shared by repeated loads of that same
+image. Different images retain independent entry-key namespaces and execution
+serials, and all captures share one application run identity. The collector
+retains each snapshot's owning image through executable destruction and writes
+it into that image's capture. Native-only images use their exact original bytes
+and do not claim selected capture coverage. Selected images that were never
+loaded or executed do not fabricate executions.
+
+An image can contain multiple qualified LDS scopes: each entry retains its own
+no-synchronization, workgroup-barrier, or barrier-loop facts. Its selection
+identity includes the per-entry scopes. Analysis renders an explicit
+`native_lds_single_range_mixed_scopes` scope for these images. Mixing execution-trace and LDS
+entries in one selected image remains invalid.
+
+The owning `application.json` embeds every preparation report and its skip
+reasons, plus relative capture paths. After the application finishes, run:
+
+```sh
+python3 tools/consan_analyze_application.py \
+  new-application-directory/application.json --analyzer build/tools/rj_consan_analyze
+```
+
+The analyzer verifies each capture against its owning report and joins images
+only when their run identities agree. Missing captures, selected entries that
+were not executed, skipped entries, and incomplete observation evidence remain
+explicit coverage gaps. The aggregate `lds_analysis` says `performed` when
+nonempty LDS executions were analyzed; execution-trace-only captures never
+claim LDS analysis. The separate `lds_observations_present` flag records whether
+those executions supplied any valid LDS memory observations. A legitimately
+completed kernel whose memory operations were all masked off can therefore
+report complete execution coverage and performed analysis with no observed LDS
+accesses. A pinned test that must exercise a memory-observation path should
+assert this flag as well as the analysis outcome. Exit status is zero for
+complete coverage without findings,
+one for findings or coverage gaps, and two for invalid input. Replay needs only
+`application.json` and its capture files; it does not reread original images,
+prepared images, or the runtime catalog.
 
 The compiler inventories the exact original image, qualifies each selected entry,
 and plans its probes, bootstrap and resources. One transactional rewrite produces
@@ -384,11 +468,9 @@ The LDS and execution-trace analyzers select their checks from the saved scope;
 queue restrictions and host signal forwarding do not establish guest LDS
 ordering. LDS barrier ordering still requires the GPU barrier observations.
 
-This format separation does not itself enable a new runtime path. The current
-application adapter continues to admit selected execution-trace entries only;
-selected LDS application admission is a separate runtime capability. The shared
-capture codecs and analyzers can represent and validate either transport for a
-qualified scope without falsely claiming conditions enforced by the other mode.
+The application adapter admits both qualified LDS and execution-trace entries.
+The shared capture codecs and analyzers validate either transport for its saved
+scope without claiming execution conditions enforced by the other mode.
 
 The producer contract changed with this interpretation. Regenerate prepared
 artifacts and captures together; older producer contracts are rejected rather
@@ -401,9 +483,10 @@ instruction facts, runs the checks, and emits JSON findings and coverage. The
 capture owns the evidence needed for replay; analysis needs neither the
 original code-object files nor live HSA state.
 
-A prepared image's selected entries share one qualified scope; native entries
-have no analysis facts. Mixed selected LDS/trace scopes and mixed barrier/loop
-scopes are rejected before publication. The shared contract retains LDS scopes
+Each selected entry retains its qualified scope; native entries have no
+analysis facts. Selected LDS entries may use different no-synchronization,
+barrier, and barrier-loop scopes in one image. Mixing selected LDS and execution
+trace scopes is rejected before publication. The shared contract retains LDS scopes
 1 (no synchronization), 2 (workgroup barrier), and 3 (bounded barrier loop), with
 execution trace assigned scope 4. Readers interpret each scope's row fields
 independently; trace counters are never barrier completion evidence.
@@ -817,6 +900,19 @@ base groups and eight waves) and reports 576 address-group losses. Those losses
 keep `coverage_complete` false; a partial capture cannot claim complete coverage. These
 checks establish analysis of the selected observations, with no full-model
 race-free or physical-GPU coverage claim.
+
+A further application run uses the all-image coordinator without an entry
+selection. It attempts all 55 model kernels and all 13 helper-image entries,
+retains owning reasons for unsupported entries, and executes the resulting
+selected/native catalog against the same VMFB and numerical baseline. The
+aggregate requires performed LDS analysis and observed memory evidence. Ordered
+composition retains the earlier `dispatch_2_matmul_Dx256x256` entry, with four
+executions retaining 9,216 observations and reporting 1,152 address-group losses
+each; the later separately tested matmul cannot fit the combined branch range
+and remains native with that explicit reason. All actual coverage gaps remain
+visible rather than being called full-model coverage. A fresh index analyzer
+must reproduce the result after original images, prepared images, and the runtime
+catalog are hidden. The index and capture files own this replay.
 
 The test uses the checkout's own build and pinned ROCm SDK, Python 3.12, and a
 separate environment with IREE compiler/runtime `3.13.0rc20261006`, NumPy, and

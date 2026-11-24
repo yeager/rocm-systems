@@ -547,6 +547,23 @@ private:
   rocjitsu::VfioDeviceHost &host_;
 };
 
+TEST(VfioQuiesceWake, SignalsOnlyWhileAHostIsWaitingForPermits) {
+  rocjitsu::VfioQuiesceWake wake;
+  ASSERT_GE(wake.fd(), 0);
+  pollfd fd{.fd = wake.fd(), .events = POLLIN, .revents = 0};
+  wake.notify_if_waiting();
+  EXPECT_EQ(::poll(&fd, 1, 0), 0);
+  wake.set_waiting(true);
+  wake.notify_if_waiting();
+  ASSERT_EQ(::poll(&fd, 1, 0), 1);
+  uint64_t completions = 0;
+  ASSERT_EQ(::read(wake.fd(), &completions, sizeof(completions)), sizeof(completions));
+  EXPECT_EQ(completions, 1u);
+  wake.set_waiting(false);
+  wake.notify_if_waiting();
+  EXPECT_EQ(::poll(&fd, 1, 0), 0);
+}
+
 TEST(VfioDeviceHost, ServesAClientAndReportsItsBusShape) {
   ServedDevice served;
   ASSERT_TRUE(served.start());

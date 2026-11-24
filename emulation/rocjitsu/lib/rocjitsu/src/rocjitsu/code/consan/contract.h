@@ -26,7 +26,7 @@ using Digest = std::array<uint8_t, 32>;
 // and internal API changes alone do not require a new token; no negotiation is
 // performed between producers and consumers.
 inline constexpr std::array<uint8_t, 16> kProducerContract = {
-    0xd6, 0x48, 0xfb, 0xad, 0x7e, 0x56, 0x43, 0x1e, 0x87, 0x38, 0x4f, 0x9d, 0x0a, 0x62, 0xc3, 0xb1};
+    0xc3, 0x5f, 0x46, 0x60, 0xa8, 0x43, 0x4f, 0xac, 0x8d, 0x02, 0x87, 0xe6, 0x08, 0x4d, 0x7f, 0xd9};
 // Canonical hash input for the manifest's options identity. Changing any byte
 // changes the identity required by artifact and capture admission.
 inline constexpr std::string_view kMvpOptions =
@@ -249,9 +249,15 @@ struct BoundaryFacts {
 [[nodiscard]] bool valid_workgroup_requirement(const std::array<uint32_t, 3> &shape,
                                                uint32_t maximum);
 
+enum class BarrierDrainProof : uint32_t {
+  AdjacentZeroWait = 0,
+  NoOutstandingLds = 1,
+};
+
 /// @brief A qualified full-workgroup barrier with an implicit identity.
 /// @details Legacy barriers use the same signal/wait position; split barriers use identity -1.
-/// The original drain precedes signal; signal/wait share a block without
+/// An adjacent original zero wait or CFG dataflow proves that no LDS remains pending.
+/// For NoOutstandingLds, original_drain is zero. Signal/wait share a block without
 /// intervening memory operations or barriers. Acyclic groups dominate every exit and execute once
 /// per wave. Loop groups execute once per iteration of the qualified block, which may be bypassed.
 /// Completion follows the unchanged scalar wait, independently of EXEC; access positions refer to
@@ -266,6 +272,7 @@ public:
   uint64_t completion_probe = 0;
   uint32_t probe_size = 0;
   uint32_t identity = UINT32_MAX;
+  BarrierDrainProof drain_proof = BarrierDrainProof::AdjacentZeroWait;
   bool operator==(const BarrierFacts &) const = default;
 };
 

@@ -41,13 +41,16 @@ amdgpu::MemoryIngressAdmission PciPhysicalMemoryAccess::admit_pt_rewalk() const 
   simdojo::PciTransportSession::OperationLease session_lease = session_->acquire();
   if (!session_lease)
     return {.outcome = amdgpu::VmAccessOutcome::Unavailable, .permit = {}};
-  const amdgpu::MemoryPtEpoch epoch{.generation = session_->generation(),
-                                    .session_identity = session_};
   // MemoryIngressPermit uses a copyable release callback. Retain the move-only
   // transport lease until the walk has finished.
   auto retained =
       std::make_shared<simdojo::PciTransportSession::OperationLease>(std::move(session_lease));
-  return {.permit = amdgpu::MemoryIngressPermit([retained = std::move(retained)] {}, epoch)};
+  // The epoch is built in place so the session's reference count, which every
+  // concurrent walk shares, is raised once here rather than twice.
+  return {.permit = amdgpu::MemoryIngressPermit(
+              [retained = std::move(retained)] {},
+              amdgpu::MemoryPtEpoch{.generation = session_->generation(),
+                                    .session_identity = session_})};
 }
 
 amdgpu::MemoryIngressAdmission
@@ -96,7 +99,10 @@ std::optional<amdgpu::VmTransferToken> PciPhysicalMemoryAccess::prepare_peer_rea
     const std::optional<amdgpu::MemoryPtEpoch> &pt_epoch) {
   if (!peer_enabled_ || access != amdgpu::VmAccessKind::Read || session_ == nullptr)
     return std::nullopt;
-  auto lease = session_->acquire();
+  // Borrowed, here and in the accessors below: each lease is scoped to one call
+  // and session_ is set only in the constructor, so this adapter's own
+  // reference outlives the lease and the shared count need not be touched.
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return std::nullopt;
   auto *provider = dynamic_cast<PciPeerDataProvider *>(lease.dma());
@@ -139,7 +145,7 @@ std::optional<amdgpu::VmTransferToken> PciPhysicalMemoryAccess::prepare_peer_wri
     const std::optional<amdgpu::MemoryPtEpoch> &pt_epoch) {
   if (!peer_enabled_ || session_ == nullptr)
     return std::nullopt;
-  auto lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return std::nullopt;
   auto *provider = dynamic_cast<PciPeerDataProvider *>(lease.dma());
@@ -154,7 +160,7 @@ amdgpu::VmAccessOutcome PciPhysicalMemoryAccess::read(amdgpu::VmMemoryDomain dom
                                                       std::span<std::byte> bytes) {
   if (session_ == nullptr)
     return amdgpu::VmAccessOutcome::Unavailable;
-  simdojo::PciTransportSession::OperationLease lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return amdgpu::VmAccessOutcome::Unavailable;
 
@@ -175,7 +181,7 @@ amdgpu::VmAccessOutcome PciPhysicalMemoryAccess::write(amdgpu::VmMemoryDomain do
                                                        std::span<const std::byte> bytes) {
   if (session_ == nullptr)
     return amdgpu::VmAccessOutcome::Unavailable;
-  simdojo::PciTransportSession::OperationLease lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return amdgpu::VmAccessOutcome::Unavailable;
 
@@ -195,7 +201,7 @@ amdgpu::AtomicLoadResult PciPhysicalMemoryAccess::atomic_load(amdgpu::VmMemoryDo
                                                               uint64_t address, uint32_t width) {
   if (session_ == nullptr)
     return {.outcome = amdgpu::VmAccessOutcome::Unavailable};
-  simdojo::PciTransportSession::OperationLease lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return {.outcome = amdgpu::VmAccessOutcome::Unavailable};
   if (domain == amdgpu::VmMemoryDomain::Compatibility ||
@@ -215,7 +221,7 @@ amdgpu::VmAccessOutcome PciPhysicalMemoryAccess::atomic_store(amdgpu::VmMemoryDo
                                                               uint64_t value) {
   if (session_ == nullptr)
     return amdgpu::VmAccessOutcome::Unavailable;
-  simdojo::PciTransportSession::OperationLease lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return amdgpu::VmAccessOutcome::Unavailable;
   if (domain == amdgpu::VmMemoryDomain::Compatibility ||
@@ -232,7 +238,7 @@ PciPhysicalMemoryAccess::compare_exchange(amdgpu::VmMemoryDomain domain, uint64_
                                           uint32_t width, uint64_t expected, uint64_t desired) {
   if (session_ == nullptr)
     return {.outcome = amdgpu::VmAccessOutcome::Unavailable};
-  simdojo::PciTransportSession::OperationLease lease = session_->acquire();
+  simdojo::PciTransportSession::BorrowedLease lease = session_->borrow();
   if (!lease)
     return {.outcome = amdgpu::VmAccessOutcome::Unavailable};
 

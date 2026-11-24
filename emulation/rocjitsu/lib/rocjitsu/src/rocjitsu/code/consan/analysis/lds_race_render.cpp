@@ -60,7 +60,7 @@ std::string render_lds_race_analysis(const LdsRaceResult &result) {
   std::ostringstream out;
   out.imbue(std::locale::classic());
   out << std::boolalpha;
-  out << "{\"verdict\":\""
+  out << "{\"lds_analysis\":\"performed\",\"verdict\":\""
       << (result.cross_wave_pairs || result.collision_groups ? "findings" : "no_observed_findings")
       << "\",\"scope\":\""
       << (result.has_dual_ranges ? "native_lds_multi_range_" : "native_lds_single_range_")

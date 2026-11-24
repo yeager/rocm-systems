@@ -797,19 +797,26 @@ application is running.
 The [integration driver](../tests/patch/consan/consan_iree_prefill_e2e.py) compiles
 the model once and uses ROCr's existing `LOADER_OPTIONS_APPEND=-dump-code`
 option during the original baseline to save its model and native helper code
-objects in a private directory. It prepares two executed model entries and
-runs the same prefill with `HSA_TOOLS_LIB` and the ConSan application
-environment. It checks the original numerical oracle, complete logits,
-selected entry/exit observations, and the closed capture. A fresh analyzer
-process must produce the same result after this test's original inputs and
-prepared artifact become unavailable. This is offline capture replay, not
-re-execution of captured kernels.
+objects in a private directory. It prepares two executed entries for the
+execution trace, then separately prepares the executed
+`prefill_bs1$async_dispatch_3_matmul_Dx128x256_f16xf16xf32` entry for LDS
+analysis. Both instrumented applications reuse the same compiled VMFB and
+baseline. Each checks the original numerical oracle, complete logits, and
+capture finalization. Fresh analyzer processes must reproduce both results
+after this test's original inputs and both prepared artifacts become
+unavailable.
 
-The test requires 9 selected executions producing 99 entry/exit rows, with
-the whole model inventory retaining 2 selected and 53 native-uncovered entries.
-Its trace result explicitly
-says `lds_analysis: not_performed`; it does not establish full-model LDS race
-analysis or physical-GPU coverage.
+The trace requires 9 selected executions producing 99 entry/exit rows, with
+2 selected and 53 native-uncovered entries. Its result retains
+`lds_analysis: not_performed`. The additional LDS result must report
+`lds_analysis: performed`, six selected matmul executions with nonempty valid
+observations, application completion evidence, and no rejected records or
+integrity events. The 54 other model entries remain native-uncovered in this
+LDS run. Each execution retains 4,608 observations (72 physical dual-range sites, four
+base groups and eight waves) and reports 576 address-group losses. Those losses
+keep `coverage_complete` false; a partial capture cannot claim complete coverage. These
+checks establish analysis of the selected observations, with no full-model
+race-free or physical-GPU coverage claim.
 
 The test uses the checkout's own build and pinned ROCm SDK, Python 3.12, and a
 separate environment with IREE compiler/runtime `3.13.0rc20261006`, NumPy, and

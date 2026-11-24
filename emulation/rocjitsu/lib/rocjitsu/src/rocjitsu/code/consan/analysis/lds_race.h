@@ -24,13 +24,14 @@ struct LdsRaceParticipant {
   AccessKind access = AccessKind::Read;
   uint32_t phase = 0;
   uint32_t workgroup = 0;
+  uint32_t range_id = 0;
   bool operator==(const LdsRaceParticipant &) const = default;
 };
 
 struct LdsRaceFinding {
   LdsRaceFindingKind kind = LdsRaceFindingKind::CrossWave;
   LdsRaceParticipant first;
-  // Collision participants are the lanes in first.mask; second is unused.
+  // Cross-range collisions carry two disjoint lane masks in one store occurrence.
   LdsRaceParticipant second;
   uint64_t lane_pairs = 0;
   LdsRaceOrdering ordering = LdsRaceOrdering::Unordered;
@@ -70,8 +71,8 @@ struct LdsRaceExecutionResult {
   // Read/read pairs contribute to neither count.
   uint64_t cross_wave_pairs = 0;
   uint64_t cross_wave_lane_pairs = 0;
-  // Each write observation with multiple lanes sharing its address contributes
-  // one group; lane pairs count the unordered lane combinations within it.
+  // A write observation with multiple lanes sharing an address, or two
+  // cross-range base groups reaching one address in a store, contributes a group.
   uint64_t collision_groups = 0;
   uint64_t collision_lane_pairs = 0;
   bool coverage_complete = true;
@@ -107,6 +108,7 @@ struct LdsRaceResult {
   uint32_t target = 0;
   uint32_t wave_size = 0;
   ScopeKind scope = ScopeKind::NativeLdsNoSynchronization;
+  bool has_dual_ranges = false;
   // Totals over executions, using the same record-pair/group units as above.
   uint64_t ordered_pairs = 0;
   uint64_t cross_wave_pairs = 0;

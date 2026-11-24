@@ -100,33 +100,68 @@ Result reject(InputError &error, std::string message) {
   return Result::failure();
 }
 
-uint32_t native_lds_width(const Instruction &instruction) {
+struct NativeLdsForm {
+  uint32_t width = 0;
+  LdsRangeShape shape = LdsRangeShape::Single;
+};
+
+NativeLdsForm native_lds_form(const Instruction &instruction) {
   switch (instruction.amdgpu_operation()) {
   case amdgpu::Operation::DS_LOAD_B32:
   case amdgpu::Operation::DS_STORE_B32:
   case amdgpu::Operation::DS_READ_B32:
   case amdgpu::Operation::DS_WRITE_B32:
-    return 4;
+    return {.width = 4};
   case amdgpu::Operation::DS_LOAD_U16:
   case amdgpu::Operation::DS_LOAD_I16:
   case amdgpu::Operation::DS_STORE_B16:
   case amdgpu::Operation::DS_READ_U16:
   case amdgpu::Operation::DS_READ_I16:
   case amdgpu::Operation::DS_WRITE_B16:
-    return 2;
+    return {.width = 2};
   case amdgpu::Operation::DS_LOAD_B64:
   case amdgpu::Operation::DS_STORE_B64:
   case amdgpu::Operation::DS_READ_B64:
   case amdgpu::Operation::DS_WRITE_B64:
-    return 8;
+    return {.width = 8};
   case amdgpu::Operation::DS_LOAD_B128:
   case amdgpu::Operation::DS_STORE_B128:
   case amdgpu::Operation::DS_READ_B128:
   case amdgpu::Operation::DS_WRITE_B128:
-    return 16;
+    return {.width = 16};
+  case amdgpu::Operation::DS_LOAD_2ADDR_B32:
+  case amdgpu::Operation::DS_STORE_2ADDR_B32:
+  case amdgpu::Operation::DS_READ2_B32:
+  case amdgpu::Operation::DS_WRITE2_B32:
+    return {.width = 4, .shape = LdsRangeShape::Dual};
+  case amdgpu::Operation::DS_LOAD_2ADDR_B64:
+  case amdgpu::Operation::DS_STORE_2ADDR_B64:
+  case amdgpu::Operation::DS_READ2_B64:
+  case amdgpu::Operation::DS_WRITE2_B64:
+    return {.width = 8, .shape = LdsRangeShape::Dual};
+  case amdgpu::Operation::DS_LOAD_2ADDR_STRIDE64_B32:
+  case amdgpu::Operation::DS_STORE_2ADDR_STRIDE64_B32:
+  case amdgpu::Operation::DS_READ2ST64_B32:
+  case amdgpu::Operation::DS_WRITE2ST64_B32:
+    return {.width = 4, .shape = LdsRangeShape::DualStride64};
+  case amdgpu::Operation::DS_LOAD_2ADDR_STRIDE64_B64:
+  case amdgpu::Operation::DS_STORE_2ADDR_STRIDE64_B64:
+  case amdgpu::Operation::DS_READ2ST64_B64:
+  case amdgpu::Operation::DS_WRITE2ST64_B64:
+    return {.width = 8, .shape = LdsRangeShape::DualStride64};
   default:
-    return 0;
+    return {};
   }
+}
+
+std::optional<RegisterRef> allocated_vgpr_tuple(const Operand *operand, uint32_t words,
+                                                uint32_t allocated_vgprs) {
+  if (operand == nullptr)
+    return std::nullopt;
+  const std::optional<RegisterRef> reg = operand->decoded_vgpr();
+  if (!reg || reg->width != words || uint32_t{reg->index} + words > allocated_vgprs)
+    return std::nullopt;
+  return reg;
 }
 
 } // namespace
@@ -211,7 +246,8 @@ Result classify_lds_race_instruction(const Instruction &instruction, rocjitsu::I
       name.starts_with("s_barrier") || name.starts_with("s_sendmsg"))
     return reject_instruction(error, InputErrorCode::UnsupportedSynchronization,
                               "unmodeled synchronization: " + std::string(name), offset);
-  const uint32_t width = native_lds_width(instruction);
+  const NativeLdsForm form = native_lds_form(instruction);
+  const uint32_t width = form.width;
   if ((addressing == amdgpu::MemoryAddressing::Lds || addressing == amdgpu::MemoryAddressing::Gds ||
        addressing == amdgpu::MemoryAddressing::DirectLds) &&
       width == 0)
@@ -228,25 +264,39 @@ Result classify_lds_race_instruction(const Instruction &instruction, rocjitsu::I
       return reject_instruction(error, InputErrorCode::UnsupportedAccess, "non-native LDS form",
                                 offset);
     const bool read = instruction.amdgpu_memory_kind() == amdgpu::MemoryKind::Load;
-    const Operand *address = instruction.src_operand(0);
+    const bool dual = form.shape != LdsRangeShape::Single;
+    const bool dual_store = dual && !read;
+    if (dual && (instruction.num_dst_operands() != 1 ||
+                 instruction.num_src_operands() != (dual_store ? 3u : 2u)))
+      return reject_instruction(error, InputErrorCode::UnsupportedAccess,
+                                "malformed two-address LDS operands", offset);
+    const std::optional<RegisterRef> address_reg =
+        allocated_vgpr_tuple(instruction.src_operand(0), 1, allocated_vgprs);
+    const uint32_t words_per_range = std::max(width / 4, 1u);
     const Operand *value = read ? instruction.dst_operand(0) : instruction.src_operand(1);
-    const std::optional<RegisterRef> address_reg = address->decoded_vgpr();
-    const std::optional<RegisterRef> value_reg = value->decoded_vgpr();
-    // b16 loads extend into one full VGPR; b64/b128 use a contiguous 2/4-word
-    // tuple. Validate the whole value tuple, including store sources.
-    const uint32_t value_words = std::max(width / 4, 1u);
-    if (!address_reg || !value_reg || address_reg->width != 1 || value_reg->width != value_words ||
-        address_reg->index >= allocated_vgprs ||
-        uint32_t{value_reg->index} + value_words > allocated_vgprs)
+    const uint32_t value_words = read && dual ? 2 * words_per_range : words_per_range;
+    if (!address_reg || !allocated_vgpr_tuple(value, value_words, allocated_vgprs) ||
+        (dual_store &&
+         !allocated_vgpr_tuple(instruction.src_operand(2), words_per_range, allocated_vgprs)))
       return reject_instruction(error, InputErrorCode::UnsupportedAccess,
                                 "LDS operands exceed allocation", offset);
-    accesses.push_back(
-        {.site = static_cast<uint32_t>(accesses.size()),
-         .original_offset = offset,
-         .kind = read ? AccessKind::Read : AccessKind::Write,
-         .address_vgpr = address_reg->index,
-         .immediate_bytes = static_cast<uint16_t>(instruction.raw_encoding()[0] & 0xffff),
-         .width = width});
+    uint16_t immediate = static_cast<uint16_t>(instruction.raw_encoding()[0]);
+    LdsRangeRecipe ranges = {};
+    if (dual) {
+      ranges = {.shape = form.shape,
+                .offset0 = static_cast<uint8_t>(immediate),
+                .offset1 = static_cast<uint8_t>(immediate >> 8)};
+      // Preserve the base before a load can overwrite it. The analyzer applies
+      // both element indices to the same dynamic instruction and guest mask.
+      immediate = 0;
+    }
+    accesses.push_back({.site = static_cast<uint32_t>(accesses.size()),
+                        .original_offset = offset,
+                        .kind = read ? AccessKind::Read : AccessKind::Write,
+                        .address_vgpr = address_reg->index,
+                        .immediate_bytes = immediate,
+                        .width = width,
+                        .lds_ranges = ranges});
   }
   return Result::success();
 }
@@ -421,7 +471,7 @@ Result validate_lds_race_accesses(const InputProgram &program, const Manifest &m
           operation == amdgpu::Operation::S_BARRIER_SIGNAL ||
           operation == amdgpu::Operation::S_BARRIER_WAIT)
         barrier_offsets.insert(instruction.src_loc());
-      if (native_lds_width(instruction) != 0)
+      if (native_lds_form(instruction).width != 0)
         access_offsets.insert(instruction.src_loc());
     }
   std::set<uint64_t> expected_barriers;

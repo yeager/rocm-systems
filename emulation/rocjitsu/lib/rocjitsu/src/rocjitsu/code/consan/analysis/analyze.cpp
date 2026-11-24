@@ -46,6 +46,13 @@ FailureOr<LdsRaceResult> analyze_capture(const Capture &capture, const AnalysisO
   result.target = capture.header.image.target;
   result.wave_size = capture.header.image.wave_size;
   result.scope = *selected_scope(capture.header.image);
+  result.has_dual_ranges =
+      std::ranges::any_of(capture.header.image.entries, [](const ImageEntryFacts &entry) {
+        return entry.selected &&
+               std::ranges::any_of(entry.selected->sites, [](const SiteFacts &site) {
+                 return site.lds_ranges.shape != LdsRangeShape::Single;
+               });
+      });
   result.coverage_complete = !capture.executions.empty();
   std::map<uint32_t, uint32_t> generations;
   for (const CapturedExecution &execution : capture.executions) {

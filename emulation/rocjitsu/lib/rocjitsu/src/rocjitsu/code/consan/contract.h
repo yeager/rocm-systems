@@ -38,7 +38,8 @@ inline constexpr std::string_view kExecutionTraceOptions =
     "execution-trace;entry-exit;complete-workgroups-1d;max-workgroups=512;lds-analysis=not-"
     "performed";
 inline constexpr uint32_t kTraceMaxWorkgroups = 512;
-// Software record slots for distinct effective LDS address groups per wave/site.
+// Software record slots for distinct LDS address bases per wave/site.
+// Dual-address sites expand each retained base through their static recipe.
 // Acyclic accesses fill sequential slots; lanes beyond four groups cause loss.
 // Repeated accesses instead claim immutable lane-based banks, where a collision
 // can lose a representative before every bank is occupied. Neither policy
@@ -170,6 +171,22 @@ public:
   bool operator==(const ImageIdentity &) const = default;
 };
 
+enum class LdsRangeShape : uint32_t { Single = 0, Dual = 1, DualStride64 = 2 };
+
+/// @brief Static element indices applied to one captured pre-instruction LDS base.
+class LdsRangeRecipe {
+public:
+  LdsRangeShape shape = LdsRangeShape::Single;
+  uint8_t offset0 = 0;
+  uint8_t offset1 = 0;
+
+  [[nodiscard]] constexpr uint32_t byte_offset(unsigned ordinal, uint32_t width) const {
+    const uint32_t index = ordinal == 0 ? offset0 : offset1;
+    return index * width * (shape == LdsRangeShape::DualStride64 ? 64u : 1u);
+  }
+  bool operator==(const LdsRangeRecipe &) const = default;
+};
+
 /// @brief One physical native LDS instruction, owned by the sole entry.
 /// @details Offsets are .text-relative. A zero mapping size means missing,
 /// whereas offset zero is a valid location. Both checks share this reservation.
@@ -179,10 +196,10 @@ public:
   uint32_t owner_entry = 0;
   AnalysisKind analysis = AnalysisKind::Invalid;
   RecordKind record = RecordKind::Access;
-  uint32_t range_id = 0;
   AccessKind access = AccessKind::Read;
-  // Byte count: explicitly set to 2, 4, 8 or 16. Zero is unspecified/invalid.
+  // Byte width of each range: 2, 4, 8 or 16. Zero is unspecified/invalid.
   uint32_t width = 0;
+  LdsRangeRecipe lds_ranges = {};
   uint64_t original_offset = 0;
   uint32_t original_size = 0;
   uint64_t prepared_guest_offset = 0;
@@ -254,7 +271,7 @@ public:
 
 /// @brief Owning static handoff shared by AOT, runtime and offline readers.
 /// @details This subset admits one entry, dynamically sized wave rows, native LDS
-/// single-range Read/Write, qualified full workgroup barriers, no private frame
+/// ordinary single/dual-range Read/Write, qualified workgroup barriers, no private frame
 /// or segment addends. The compiler must establish the scope from original instructions.
 /// Codec validation establishes structural consistency, not ISA safety.
 class Manifest {

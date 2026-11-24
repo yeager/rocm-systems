@@ -442,8 +442,11 @@ gfx942/gfx950 use the corresponding `ds_write_*` and `ds_read_*` names.
 The b16 loads write a whole 32-bit result with unsigned or signed extension. Access probes
 capture addresses before an aliased load can overwrite them, record actual byte
 widths and byte immediates, and preserve every guest result word. b8/b96,
-partial-register subword loads, dual-range, transpose, FLAT, and atomic forms
-remain unsupported. The existing minimum fixed LDS extent remains four bytes.
+partial-register subword loads, transpose, FLAT, and atomic forms remain
+unsupported. Ordinary dual-address b32/b64 loads and stores are admitted,
+including their stride-64 variants (`ds_read2`/`ds_write2` on gfx942/gfx950 and
+`ds_load_2addr`/`ds_store_2addr` on gfx1100/gfx1201/gfx1250). The existing
+minimum fixed LDS extent remains four bytes.
 
 Access widths are measured in bytes. `NativeLdsAccess::width` and
 `SiteFacts::width` default to zero, meaning unspecified and invalid. Producers
@@ -451,6 +454,23 @@ must explicitly supply 2, 4, 8, or 16; zero never implies b32 or a zero-length
 access. Manifest admission rejects zero, and a committed observation must match
 its site's width. An all-zero uncommitted report slot still represents vacant
 storage, not an access.
+
+A dual-address instruction still owns one physical site and one dynamic access
+sequence. Its probe captures the original base and active lane mask once before
+the guest load can overwrite its address register. Static facts retain both
+8-bit element indices and the ordinary or stride-64 scale. The analyzer expands
+the retained base into two separate ranges and renders their `range_id` as 0 or
+1. For b64 indices 3 and 5, the ranges are `[base+24, base+32)` and
+`[base+40, base+48)`; the bytes between them are not accessed. Each range is
+bounds-checked with wide arithmetic, independently of the other range.
+
+Different lane bases can make opposite ordinals of the same store collide.
+Those findings retain both lane masks and range ordinals. Coincident element
+indices follow the concrete target's request semantics: targets that ignore the
+second coincident request retain only ordinal 0. Both ordinals share the existing
+four-base-group reservation and loss evidence, rather than synthesizing a second
+probe call or barrier phase. Single-range static facts retain their zero recipe
+word and wire representation; older readers reject nonzero dual recipes.
 
 Range admission checks bounds by subtraction before calculating ends. Diagnosis
 sweeps checked ranges, retaining grouped counts for identical ranges, excluding

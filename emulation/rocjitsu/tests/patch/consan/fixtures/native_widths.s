@@ -61,7 +61,11 @@
 #define MASK_AND_SAVE s_and_saveexec_b32
 #define WAVE_SHIFT 5
 #endif
+#ifdef CONSAN_DUAL_READ
+#define GROUP_BYTES 4096
+#else
 #define GROUP_BYTES 1024
+#endif
 #define CONSAN_MAX_WORKGROUP 1024
 #ifndef CONSAN_WIDTH
 #define CONSAN_WIDTH 16
@@ -127,7 +131,9 @@ CONSAN_KERNEL:
   v_cmp_eq_u32 MASK_VCC, ((CONSAN_WAVE_SIZE-1)*CONSAN_HIGH), v12
 #endif
   MASK_AND_SAVE MASK_SAVE, MASK_VCC
-#if CONSAN_WIDTH == 8
+#ifdef CONSAN_DUAL_READ
+#include "native_dual.inc"
+#elif CONSAN_WIDTH == 8
   DS_STORE_B8 v1, v2
 #elif CONSAN_WIDTH == 96
   DS_STORE_B96 v1, v[2:4]

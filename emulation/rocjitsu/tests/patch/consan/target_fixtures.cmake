@@ -176,10 +176,54 @@ foreach(
             )
             list(APPEND _target_fixtures ${_image})
         endforeach()
+        set(_dual_specs)
+        foreach(_bits IN ITEMS 32 64)
+            foreach(_spacing IN ITEMS normal stride64)
+                set(_suffix "")
+                if(_legacy)
+                    if(_spacing STREQUAL "stride64")
+                        set(_suffix st64)
+                    endif()
+                    set(_dual_read ds_read2${_suffix}_b${_bits})
+                    set(_dual_write ds_write2${_suffix}_b${_bits})
+                else()
+                    if(_spacing STREQUAL "stride64")
+                        set(_suffix _stride64)
+                    endif()
+                    set(_dual_read ds_load_2addr${_suffix}_b${_bits})
+                    set(_dual_write ds_store_2addr${_suffix}_b${_bits})
+                endif()
+                foreach(_dual_case IN ITEMS values high collision)
+                    if(
+                        _dual_case STREQUAL "collision"
+                        AND NOT _spacing STREQUAL "normal"
+                    )
+                        continue()
+                    endif()
+                    set(_name dual-b${_bits}-${_spacing}-${_dual_case})
+                    set(_high 0)
+                    set(_collision 0)
+                    if(_dual_case STREQUAL "high")
+                        set(_high 1)
+                    elseif(_dual_case STREQUAL "collision")
+                        set(_collision 1)
+                    endif()
+                    list(
+                        APPEND _dual_specs
+                        ${_name}:${_bits}:0:${_high}:0:${_collision}
+                    )
+                    set(_dual_options_${_name}
+                        -DCONSAN_DUAL_READ=${_dual_read}
+                        -DCONSAN_DUAL_WRITE=${_dual_write}
+                    )
+                endforeach()
+            endforeach()
+        endforeach()
         foreach(
             _spec
             IN
             ITEMS
+                ${_dual_specs}
                 u16:16:0:0:0:0
                 i16:16:1:0:0:0
                 b64:64:0:0:0:0
@@ -224,10 +268,14 @@ foreach(
                     -DCONSAN_WAVE_SIZE=${_wave_size} -DCONSAN_LEGACY=${_legacy}
                     -DCONSAN_GFX12=${_gfx12} -DCONSAN_WIDTH=${_width}
                     -DCONSAN_SIGNED=${_signed} -DCONSAN_HIGH=${_high}
-                    -DCONSAN_ALIAS=${_alias} -DCONSAN_COLLISION=${_collision} -c
+                    -DCONSAN_ALIAS=${_alias} -DCONSAN_COLLISION=${_collision}
+                    ${_dual_options_${_name}} -c
                     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/native_widths.s -o
                     ${_object}
-                DEPENDS fixtures/native_widths.s ${AMDCXX}
+                DEPENDS
+                    fixtures/native_widths.s
+                    fixtures/native_dual.inc
+                    ${AMDCXX}
                 VERBATIM
             )
             add_custom_command(

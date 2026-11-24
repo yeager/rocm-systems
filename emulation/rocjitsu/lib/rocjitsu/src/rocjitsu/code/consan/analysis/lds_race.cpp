@@ -3,6 +3,8 @@
 
 #include "rocjitsu/code/consan/analysis/lds_race.h"
 #include "rocjitsu/code/consan/encoding.h"
+#include "rocjitsu/code/consan/target.h"
+#include "rocjitsu/isa/arch/amdgpu/generated/shared/isa_properties.h"
 
 #include <algorithm>
 #include <array>
@@ -68,9 +70,54 @@ struct WaveEvidence {
   uint32_t final_phase = 0;
 };
 
+// The GPU recorded a base once per address group before the original instruction.
+// Expand its two effective ranges without inventing a second dynamic occurrence.
+void expand_dual_group(const SiteGroup &group, const SiteFacts &site, bool coalesce,
+                       uint32_t extent, uint32_t examples, LdsRaceExecutionResult &result,
+                       std::vector<Observation> &observations) {
+  const size_t first = observations.size();
+  const LdsRangeRecipe &recipe = site.lds_ranges;
+  const unsigned count = coalesce && recipe.offset0 == recipe.offset1 ? 1 : 2;
+  for (const Observation &raw : group.records) {
+    const LdsRaceParticipant &base = raw.participant;
+    bool out_of_bounds = false;
+    for (unsigned ordinal = 0; ordinal < count; ++ordinal) {
+      const uint64_t start = uint64_t{base.offset} + recipe.byte_offset(ordinal, site.width);
+      if (start > extent || site.width > extent - start) {
+        out_of_bounds = true;
+        continue;
+      }
+      Observation access = raw;
+      access.participant.offset = static_cast<uint32_t>(start);
+      access.participant.range_id = ordinal;
+      if (site.access == AccessKind::Write) {
+        // Different bases have disjoint validated lane masks, yet different
+        // range ordinals can select the same bytes in this store occurrence.
+        for (const Observation &other : std::span(observations).subspan(first)) {
+          if (other.participant.offset != start || other.participant.mask == base.mask)
+            continue;
+          const uint64_t pairs = uint64_t{other.lanes()} * raw.lanes();
+          ++result.collision_groups;
+          result.collision_lane_pairs += pairs;
+          if (result.collision_examples.size() < examples)
+            result.collision_examples.push_back({LdsRaceFindingKind::InstructionCollision,
+                                                 other.participant, access.participant, pairs});
+        }
+      }
+      observations.push_back(access);
+    }
+    if (out_of_bounds) {
+      ++result.rejected_records;
+      issue(result, base.wave, base.site, "invalid_or_out_of_bounds_effective_range",
+            base.workgroup);
+    }
+  }
+}
+
 void read_wave(const Manifest &facts, const CapturedExecution &execution,
-               const LaunchLayout &layout, uint32_t row_index, LdsRaceExecutionResult &result,
-               std::vector<Observation> &observations, std::vector<WaveEvidence> &completions) {
+               const LaunchLayout &layout, uint32_t row_index, uint32_t examples,
+               LdsRaceExecutionResult &result, std::vector<Observation> &observations,
+               std::vector<WaveEvidence> &completions) {
   const uint32_t wave = row_index % layout.waves_per_workgroup;
   const uint32_t workgroup = row_index / layout.waves_per_workgroup;
   const std::span<const uint8_t> row =
@@ -179,8 +226,8 @@ void read_wave(const Manifest &facts, const CapturedExecution &execution,
           wire::read_u32(record, wire::kRecordAnalysis) != uint32_t(site.analysis) ||
           wire::read_u32(record, wire::kRecordKind) != uint32_t(site.record) ||
           wire::read_u32(record, wire::kRecordSite) != site.id ||
-          wire::read_u32(record, wire::kRecordRange) != site.range_id || sequence == 0 ||
-          sequence > final || width != site.width || mask == 0 || (mask & ~active_mask) != 0 ||
+          wire::read_u32(record, wire::kRecordRange) != 0 || sequence == 0 || sequence > final ||
+          width != site.width || mask == 0 || (mask & ~active_mask) != 0 ||
           !all_zero(record.subspan(wire::kRecordReservedBegin))) {
         ++result.rejected_records;
         issue(result, wave, site.id, "invalid_record_commit_identity_mask_or_sequence", workgroup);
@@ -275,8 +322,14 @@ void read_wave(const Manifest &facts, const CapturedExecution &execution,
         })) {
       result.rejected_records += group.records.size();
       issue(result, wave, site.first, "ambiguous_instruction_group_ownership", workgroup);
-    } else
+    } else if (facts.sites[site.first].lds_ranges.shape != LdsRangeShape::Single) {
+      const bool coalesce =
+          isa_properties(target_profile(facts.target)->arch).coincident_ds_ignores_data1;
+      expand_dual_group(group, facts.sites[site.first], coalesce, execution.group_bytes, examples,
+                        result, observations);
+    } else {
       observations.insert(observations.end(), group.records.begin(), group.records.end());
+    }
   }
   // Validate every retained endpoint, including disjoint and Read/Read accesses.
   // A boundary contradiction is an integrity issue even without a candidate pair.
@@ -514,7 +567,7 @@ LdsRaceExecutionResult analyze_lds_race_execution(const Manifest &facts,
   if (!facts.barriers.empty())
     result.required_barrier_waves = layout.value().wave_count;
   for (uint32_t wave = 0; wave < layout.value().wave_count; ++wave)
-    read_wave(facts, execution, layout.value(), wave, result, observations, completions);
+    read_wave(facts, execution, layout.value(), wave, examples, result, observations, completions);
   result.workgroup_count = layout.value().workgroup_count;
   result.waves_per_workgroup = layout.value().waves_per_workgroup;
   result.valid_observations = observations.size();

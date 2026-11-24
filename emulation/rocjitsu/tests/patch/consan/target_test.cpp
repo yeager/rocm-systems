@@ -81,6 +81,31 @@ TEST_P(ConSanTargetStatic, CallableArtifactsPreserveStaticSitesAndPrivateFrameAd
   }
 }
 
+TEST_P(ConSanTargetStatic, TraceUsesQualifiedTargetWaveAndOriginalWorkgroupIdentity) {
+  const test::TargetMode mode = GetParam();
+  const TargetProfile &target = *target_profile(mode.target);
+  ASSERT_TRUE(supports_execution_trace(target, mode.wave_size));
+  const std::vector<uint8_t> original =
+      test::read_fixture(test::target_fixture_path(mode, "group-1"));
+  ASSERT_FALSE(original.empty());
+  const std::array<std::string_view, 1> entries = {"lds_producer_consumer"};
+  InputError error;
+  const FailureOr<PreparedImageArtifact> artifact =
+      prepare_image(original, target, entries, error, ScopeKind::ExecutionTrace);
+  ASSERT_TRUE(artifact.succeeded()) << error.message;
+  ASSERT_EQ(artifact.value().facts.entries.size(), 1u);
+  const Manifest &manifest = *artifact.value().facts.entries.front().selected;
+  EXPECT_EQ(manifest.target, target.id);
+  EXPECT_EQ(manifest.wave_size, mode.wave_size);
+  EXPECT_TRUE(manifest.sites.empty());
+  EXPECT_EQ(manifest.boundaries.size(), 2u);
+  EXPECT_EQ(manifest.entry.workgroup_id_scalar,
+            mode.target == std::string_view("gfx1201") || mode.target == std::string_view("gfx1250")
+                ? kWorkgroupIdTtmp9Selector
+                : 15u);
+  EXPECT_TRUE(validate_image_facts(artifact.value().facts).succeeded());
+}
+
 TEST_P(ConSanTargetStatic, DualAccessesOwnOneBaseAndTwoStaticElementIndices) {
   const test::TargetMode mode = GetParam();
   const TargetProfile &target = *target_profile(mode.target);
@@ -323,6 +348,104 @@ TEST(ConSanTerminalExit, ReplaysAdjacentDeallocationAndEndpgmAfterCallback) {
   EXPECT_TRUE(build_input_program(invalid, target, "lds_producer_consumer", error).failed());
   EXPECT_EQ(error.code, InputErrorCode::UnsupportedFlow) << error.message;
 }
+
+TEST(ConSanTraceMatrix, UnsupportedCdna5ProducersRemainNativeBeforeLowering) {
+  const test::TargetMode mode = {.target = "gfx1250", .wave_size = 32};
+  const TargetProfile &target = *target_profile(mode.target);
+  const std::array<std::string_view, 1> entries = {"lds_producer_consumer"};
+  const std::vector<uint8_t> known =
+      test::read_fixture(test::target_fixture_path(mode, "native-49"));
+  ASSERT_FALSE(known.empty());
+  InputError error;
+  const FailureOr<InputProgram> input = build_image_entry_program(
+      known, target, entries.front(), error, {}, ScopeKind::ExecutionTrace);
+  ASSERT_TRUE(input.succeeded()) << error.message;
+  const auto expect_native = [&](std::span<const uint8_t> original) {
+    EXPECT_TRUE(build_image_entry_program(original, target, entries.front(), error, {},
+                                          ScopeKind::ExecutionTrace)
+                    .failed());
+    EXPECT_EQ(error.code, InputErrorCode::UnsupportedInstruction) << error.message;
+    const FailureOr<PreparationResult> preparation =
+        prepare_image_best_effort(original, target, entries, error, ScopeKind::ExecutionTrace);
+    ASSERT_TRUE(preparation.succeeded()) << error.message;
+    ASSERT_EQ(preparation.value().entries.size(), 1u);
+    EXPECT_FALSE(preparation.value().entries.front().instrumented);
+    EXPECT_EQ(preparation.value().entries.front().reason.code,
+              InputErrorCode::UnsupportedInstruction);
+    EXPECT_FALSE(preparation.value().artifact);
+  };
+  const std::vector<uint8_t> unknown =
+      test::read_fixture(test::target_fixture_path(mode, "native-50"));
+  ASSERT_FALSE(unknown.empty());
+  expect_native(unknown);
+  const size_t entry = input.value().text_file_offset + input.value().kernel.entry_text_offset;
+  for (const uint16_t opcode :
+       {cdna5::kVPermPk16B4U4Vop3, cdna5::kVPermPk16B6U4Vop3, cdna5::kVPermPk16B8U4Vop3}) {
+    SCOPED_TRACE(opcode);
+    const std::array<uint32_t, 2> words =
+        cdna5::build_vop3(opcode, {.vdst = 8, .src0 = 256, .src1 = 258, .src2 = 260});
+    const std::unique_ptr<Decoder> decoder = Decoder::create(target.arch);
+    ASSERT_NE(decoder, nullptr);
+    const DecodeResult decoded = decoder->decode_window(words);
+    ASSERT_TRUE(decoded.succeeded());
+    ASSERT_FALSE(decoded.value()->is_transcendental());
+    std::vector<uint8_t> original = known;
+    const std::array<uint32_t, 4> body = {words[0], words[1],
+                                          cdna5::build_vop1(cdna5::kVNopVop1)[0],
+                                          cdna5::build_sopp(cdna5::kSEndpgmSopp)[0]};
+    ASSERT_LE(entry + sizeof(body), original.size());
+    std::memcpy(original.data() + entry, body.data(), sizeof(body));
+    expect_native(original);
+  }
+  const std::array<uint32_t, 1> trans =
+      cdna5::build_vop1(cdna5::kVExpF32Vop1, {.src0 = 256, .vdst = 8});
+  const std::unique_ptr<Decoder> decoder = Decoder::create(target.arch);
+  ASSERT_NE(decoder, nullptr);
+  const DecodeResult decoded = decoder->decode_window(trans);
+  ASSERT_TRUE(decoded.succeeded());
+  ASSERT_TRUE(decoded.value()->is_transcendental());
+  std::vector<uint8_t> original = known;
+  ASSERT_EQ(decoded.value()->size(), 4);
+  const std::array<uint32_t, 2> body = {trans[0], cdna5::build_sopp(cdna5::kSEndpgmSopp)[0]};
+  std::memcpy(original.data() + entry, body.data(), sizeof(body));
+  EXPECT_TRUE(
+      prepare_image(original, target, entries, error, ScopeKind::ExecutionTrace).succeeded())
+      << error.message;
+}
+
+#ifdef CONSAN_MULTI_ENTRY_UNKNOWN_MATRIX_FIXTURE
+TEST(ConSanTraceMatrix, UnsupportedUnselectedSiblingRemainsAnOwningNativeSkip) {
+  const std::vector<uint8_t> original =
+      test::read_fixture(CONSAN_MULTI_ENTRY_UNKNOWN_MATRIX_FIXTURE);
+  ASSERT_FALSE(original.empty());
+  const TargetProfile &target = *target_profile("gfx1250");
+  const std::array<std::string_view, 1> entries = {"mk_a"};
+  InputError error;
+  ASSERT_TRUE(build_image_entry_program(original, target, entries.front(), error, {},
+                                        ScopeKind::ExecutionTrace)
+                  .succeeded())
+      << error.message;
+  EXPECT_TRUE(prepare_image(original, target, entries, error, ScopeKind::ExecutionTrace).failed());
+  EXPECT_EQ(error.code, InputErrorCode::UnsupportedInstruction) << error.message;
+  EXPECT_EQ(error.recovery, InputErrorRecovery::NativeCallableCapability);
+  const FailureOr<PreparationResult> preparation =
+      prepare_image_best_effort(original, target, entries, error, ScopeKind::ExecutionTrace);
+  ASSERT_TRUE(preparation.succeeded()) << error.message;
+  EXPECT_FALSE(preparation.value().artifact);
+  ASSERT_EQ(preparation.value().entries.size(), 1u);
+  EXPECT_FALSE(preparation.value().entries.front().instrumented);
+  EXPECT_EQ(preparation.value().entries.front().reason.code,
+            InputErrorCode::UnsupportedInstruction);
+  EXPECT_EQ(preparation.value().entries.front().reason.recovery,
+            InputErrorRecovery::NativeCallableCapability);
+  EXPECT_EQ(error.recovery, InputErrorRecovery::None);
+  error = preparation.value().entries.front().reason;
+  EXPECT_TRUE(
+      build_image_entry_program({}, target, entries.front(), error, {}, ScopeKind::ExecutionTrace)
+          .failed());
+  EXPECT_EQ(error.recovery, InputErrorRecovery::None);
+}
+#endif
 
 TEST(ConSanTraceMatrix, KnownProducerUsesSpacedBoundariesAndUnknownMatrixIsRejected) {
   const test::TargetMode mode = {.target = "gfx1250", .wave_size = 32};

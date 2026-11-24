@@ -263,8 +263,14 @@ FailureOr<PreparedArtifact> lower(const InputProgram &program, InputError &error
   Instrumentor instrumentor(object, program.target->arch, options);
   add_program_points(instrumentor, program, probes, stride.value());
   InstrumentedCodeObject output = instrumentor.patch();
-  if (!output.errors.empty())
-    return reject(error, "callable DBI lowering: " + output.errors.front());
+  if (!output.errors.empty()) {
+    (void)reject(error, "callable DBI lowering: " + output.errors.front());
+    if (output.callable_capability_error) {
+      error.code = InputErrorCode::UnsupportedInstruction;
+      error.recovery = InputErrorRecovery::NativeCallableCapability;
+    }
+    return Result::failure();
+  }
   PreparedArtifact artifact;
   artifact.image = std::move(output.elf_bytes);
   if (append_program_facts(program, output.sites, artifact.manifest, error).failed())
@@ -410,6 +416,10 @@ FailureOr<PreparedImageArtifact> lower_image(std::span<const uint8_t> original,
     if (!output.errors.empty() &&
         output.trampoline_error == TrampolineBuildErrorCode::UnsupportedControlTransferRange)
       error.code = InputErrorCode::UnsupportedControlTransferRange;
+    if (!output.errors.empty() && output.callable_capability_error) {
+      error.code = InputErrorCode::UnsupportedInstruction;
+      error.recovery = InputErrorRecovery::NativeCallableCapability;
+    }
     return Result::failure();
   }
   PreparedImageArtifact artifact;

@@ -42,6 +42,11 @@ unused budget between entries. The default budget is CPU affinity and the
 target table sets the allocation ceiling. `cpu_thread_budget` overrides the
 budget; explicit knob settings take priority.
 
+A VFIO-user server always runs one engine thread. It applies the resolved
+dispatch width only when it presents a single function; presenting several, it
+keeps every GPU at D=1 whatever the table or an explicit `cpu_dispatch_threads`
+selects. See [Simulation threading](configuration.md#simulation-threading).
+
 Desktop, MI210 and CDNA3 tables stop at an engine/dispatch cost of 24.
 The single-GPU gfx950 and gfx1250 presets use eight engines and up to 24 and
 40 shared CU dispatch workers respectively, for totals of 32 and 48 threads. See

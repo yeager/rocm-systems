@@ -300,15 +300,31 @@ HIP_TEST_CASE(Unit_hipStreamAqlBarrierBit_Scenarios) {
     const std::string log = runBarrierScenarioChild("event_wait");
     REQUIRE(aqllog::DispatchBarrierBitForWorkgroup(log, 17) == 0);
     REQUIRE(aqllog::DispatchBarrierBitForWorkgroup(log, 18) == 0);
-    REQUIRE(aqllog::DispatchBarrierBitForWorkgroup(log, 19) == 1);
 
     // Runtime init also emits barrier packets before the scenario kernels run,
     // so scope collection to the event record/wait pair between wg18 and wg19.
     const std::vector<aqllog::Packet> barriers = aqllog::BarriersBetweenDispatches(
         log, aqllog::WorkgroupToken(18), aqllog::WorkgroupToken(19));
-    REQUIRE(barriers.size() == 2);
+    // The record is a barrier packet with the barrier bit: it completes after wg17 and wg18.
+    REQUIRE(!barriers.empty());
     REQUIRE(barriers[0].barrier == 1);
-    REQUIRE(barriers[1].barrier == 0);
+    const std::optional<std::string> record_signal =
+        aqllog::FieldToken(barriers[0].line, "completion_signal=");
+    REQUIRE(record_signal.has_value());
+
+    // wg19 must start after the record completed. The runtime may order it by its own barrier
+    // bit, by a later barrier packet that waits on the record's signal, or by a dependency on
+    // that signal in the dispatch itself (AMD extended dispatch packet, no extra packet).
+    const std::optional<aqllog::Packet> wg19 = aqllog::DispatchForWorkgroup(log, 19);
+    REQUIRE(wg19.has_value());
+    bool waits_for_record =
+        wg19->barrier == 1 || aqllog::WaitsOnSignal(wg19->line, *record_signal);
+    for (size_t i = 1; i < barriers.size(); ++i) {
+      // The wait already waits on the record's signal, so it needs no barrier bit.
+      REQUIRE(barriers[i].barrier == 0);
+      waits_for_record = waits_for_record || aqllog::WaitsOnSignal(barriers[i].line, *record_signal);
+    }
+    REQUIRE(waits_for_record);
   }
 }
 

@@ -228,5 +228,45 @@ inline int DispatchBarrierBitForWorkgroup(const std::string& log, uint32_t size)
   return -1;
 }
 
+
+//! The text starting at |key| up to (not including) the next whitespace,
+//! or nullopt when |key| is absent in |line|.
+inline std::optional<std::string> FieldToken(const std::string& line, const std::string& key) {
+  const size_t key_pos = line.find(key);
+  if (key_pos == std::string::npos) {
+    return std::nullopt;
+  }
+  const size_t start = key_pos + key.size();
+  size_t end = start;
+  while (end < line.size() && !std::isspace(static_cast<unsigned char>(line[end]))) {
+    ++end;
+  }
+  if (end == start) {
+    return std::nullopt;
+  }
+  return line.substr(start, end - start);
+}
+
+//! True if |line| references |signal| in one of its dep_signal_N fields.
+inline bool WaitsOnSignal(const std::string& line, const std::string& signal) {
+  const std::string key_prefix = "dep_signal_";
+  size_t pos = 0;
+  while ((pos = line.find(key_prefix, pos)) != std::string::npos) {
+    pos += key_prefix.size();
+    // skip the index digit(s) and '='
+    while (pos < line.size() && (std::isdigit(static_cast<unsigned char>(line[pos])) || line[pos] == '=')) {
+      ++pos;
+    }
+    const size_t sig_start = pos;
+    while (pos < line.size() && !std::isspace(static_cast<unsigned char>(line[pos]))) {
+      ++pos;
+    }
+    if (line.substr(sig_start, pos - sig_start) == signal) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace aqllog
 }  // namespace hip

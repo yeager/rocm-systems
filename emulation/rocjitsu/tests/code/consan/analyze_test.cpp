@@ -1420,6 +1420,27 @@ TEST_F(ConSanAnalysis, UnmodeledScopeCannotBeTreatedAsConfirmedUnorderedAccesses
   EXPECT_EQ(error_.message(), "empty image or unsupported target, ABI, scope or options");
 }
 
+TEST_F(ConSanAnalysis, ApplicationTransportAnalyzesLdsWithoutClaimingSignalForwarding) {
+  access(0, 0, 1);
+  access(1, 1, 1);
+  const FailureOr<LdsRaceResult> controlled = analyze();
+  ASSERT_TRUE(controlled.succeeded()) << error_.message();
+  ASSERT_EQ(controlled.value().cross_wave_pairs, 1u);
+  capture_.header.execution_conditions = capture_execution_conditions(ExecutionMode::Application);
+  // A changed header cannot relabel evidence from a different transport.
+  EXPECT_TRUE(analyze_typed(capture_, {}, error_.emitter()).failed());
+  EXPECT_TRUE(encode().failed());
+  capture_.executions.front().completion = completion_evidence(ExecutionMode::Application);
+  const FailureOr<LdsRaceResult> application = analyze();
+  ASSERT_TRUE(application.succeeded()) << error_.message();
+  EXPECT_EQ(application.value().execution_conditions, kApplicationExecutionConditions);
+  EXPECT_EQ(application.value().cross_wave_pairs, controlled.value().cross_wave_pairs);
+  EXPECT_EQ(application.value().coverage_complete, controlled.value().coverage_complete);
+  capture_.header.execution_conditions = capture_execution_conditions(ExecutionMode::Controlled);
+  EXPECT_TRUE(analyze_typed(capture_, {}, error_.emitter()).failed());
+  EXPECT_TRUE(encode().failed());
+}
+
 TEST_F(ConSanAnalysis, TypedHeaderConditionsAndIdentityCannotBypassFileValidation) {
   const CaptureHeader saved = capture_.header;
   for (const uint32_t unsupported : {0u, 14u, 13u, 11u, 7u, 31u}) {

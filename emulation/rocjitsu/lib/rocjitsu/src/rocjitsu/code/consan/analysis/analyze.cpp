@@ -19,7 +19,9 @@ FailureOr<LdsRaceResult> analyze_capture(const Capture &capture, const AnalysisO
       return diagnostic.emit() << "entry name is not valid UTF-8 for JSON output";
     }
   }
-  if (capture.header.execution_conditions != kSupportedExecutionConditions) {
+  const std::optional<ExecutionMode> mode =
+      capture_execution_mode(capture.header.execution_conditions);
+  if (!mode) {
     return diagnostic.emit() << "unsupported capture execution conditions";
   }
   if (std::ranges::all_of(capture.header.run_identity, [](uint8_t value) { return value == 0; })) {
@@ -50,6 +52,7 @@ FailureOr<LdsRaceResult> analyze_capture(const Capture &capture, const AnalysisO
     const Manifest *manifest = selected_manifest(capture.header.image, execution.entry_key);
     if (manifest == nullptr || execution.serial != result.executions.size() + 1 ||
         execution.storage_generation <= generations[execution.storage_slot] ||
+        execution.completion != completion_evidence(*mode) ||
         (manifest != nullptr &&
          execution.arguments.size() != manifest->entry.original_kernarg_bytes)) {
       return diagnostic.emit() << "invalid capture entry or execution identity";

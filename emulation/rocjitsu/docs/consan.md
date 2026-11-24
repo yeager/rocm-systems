@@ -145,8 +145,9 @@ A module binds every image entry after successful freeze. The actual kernel obje
 selects an entry binding; selected dispatches use that entry's original argument
 ABI and prepared resource plan. Known unselected entries retain their original
 packet, resources and completion signal and are native/uncovered. Unknown kernel
-objects are rejected. One module, a controlled queue, nonoverlap and dedicated
-completion signals remain required, including for native siblings.
+objects are rejected. In controlled execution mode, one module, a controlled
+queue, nonoverlap and dedicated completion signals remain required, including
+for native siblings.
 Admission recognizes a native completion already visible to the application even
 if the observer has not yet processed it. The observer retains its signal lease
 until its wait returns, so callers still drain before releasing that signal.
@@ -336,6 +337,33 @@ native mixing, then replay in a fresh process after removing test artifacts.
 Their application's following completion barrier is part of the fixture; the
 ConSan interceptor adds none. These controls exercise simulator execution,
 including TTMP workgroup attribution, and do not establish physical-GPU coverage.
+
+### Execution evidence and analysis scope
+
+The capture producer declares its actual execution mode independently of the
+selected analysis scope. Controlled execution records the enforced single-queue,
+nonoverlap, profiling-disabled and system fine-grained conditions. It also records
+completion, visibility and successful forwarding to the original application
+signal. Application execution records system fine-grained transport and private
+completion visibility; its original null signal is not forwarded. Both modes
+require an independent owning snapshot before report storage can be reused.
+
+Readers accept only these two complete execution-condition combinations. Every
+execution's completion evidence must match its containing header: changing a
+header cannot relabel forwarded evidence as private visibility or the reverse.
+The LDS and execution-trace analyzers select their checks from the saved scope;
+queue restrictions and host signal forwarding do not establish guest LDS
+ordering. LDS barrier ordering still requires the GPU barrier observations.
+
+This format separation does not itself enable a new runtime path. The current
+application adapter continues to admit selected execution-trace entries only;
+selected LDS application admission is a separate runtime capability. The shared
+capture codecs and analyzers can represent and validate either transport for a
+qualified scope without falsely claiming conditions enforced by the other mode.
+
+The producer contract changed with this interpretation. Regenerate prepared
+artifacts and captures together; older producer contracts are rejected rather
+than guessed or silently upgraded.
 
 ### Offline diagnosis
 

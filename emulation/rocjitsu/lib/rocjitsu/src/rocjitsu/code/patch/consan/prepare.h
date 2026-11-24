@@ -23,11 +23,40 @@ struct PreparedImageArtifact {
   std::vector<uint8_t> image;
 };
 
+struct EntryPreparation {
+  std::string entry;
+  EntryKey key = 0;
+  bool instrumented = false;
+  InputError reason;
+};
+
+/// @brief Selection evidence independent of whether instrumentation was possible.
+/// @details A missing artifact means all requested entries remain native. It is
+/// not an empty prepared image or a capture claiming successful analysis.
+struct PreparationResult {
+  ImageIdentity original;
+  uint32_t target = 0;
+  ScopeKind requested_scope = ScopeKind::NativeLdsNoSynchronization;
+  std::vector<EntryPreparation> entries;
+  std::optional<PreparedImageArtifact> artifact;
+};
+
 /// @brief Prepare one coherent image with explicit selected entry names.
 [[nodiscard]] FailureOr<PreparedImageArtifact>
 prepare_image(std::span<const uint8_t> original, const TargetProfile &target,
               std::span<const std::string_view> entries, InputError &error,
               ScopeKind scope = ScopeKind::NativeLdsNoSynchronization);
+
+/// @brief Retain unsupported requested entries as native, with owning reasons.
+/// @details Invalid images/selections, exhausted budgets and failed rewriting
+/// remain errors. Supported entries undergo the same strict transactional
+/// lowering and preservation checks as prepare_image().
+[[nodiscard]] FailureOr<PreparationResult>
+prepare_image_best_effort(std::span<const uint8_t> original, const TargetProfile &target,
+                          std::span<const std::string_view> entries, InputError &error,
+                          ScopeKind scope = ScopeKind::NativeLdsNoSynchronization);
+
+[[nodiscard]] std::string render_preparation_report(const PreparationResult &result);
 
 /// @brief Validate shared images/CFG/maps and analysis-specific preservation.
 /// @details Verify image identity, descriptor/note resources, branch boundaries,

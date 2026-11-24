@@ -19,6 +19,7 @@
 #include "rocjitsu/isa/register_set.h"
 #include "rocjitsu/isa/target_registry.h"
 #include "util/diagnostic.h"
+#include "util/log.h"
 
 #include <gtest/gtest.h>
 
@@ -554,6 +555,91 @@ TEST_F(ConSanPrepareImage, InvalidOrIncompleteSelectionPublishesNoResult) {
     }
   }
   EXPECT_TRUE(prepare_image(original_, target, selected, error_).failed());
+}
+#endif
+
+#ifdef CONSAN_MULTI_ENTRY_UNSUPPORTED_FIXTURE
+class ConSanPrepareCoverage : public ::testing::Test {
+protected:
+  void SetUp() override {
+    original_ = test::read_fixture(CONSAN_MULTI_ENTRY_UNSUPPORTED_FIXTURE);
+    ASSERT_FALSE(original_.empty());
+  }
+
+  std::vector<uint8_t> original_;
+  InputError error_;
+};
+
+TEST_F(ConSanPrepareCoverage, PartialCoverageMatchesStrictSupportedSubsetAndRetainsNativeBytes) {
+  const TargetProfile &target = *target_profile("gfx1250");
+  const std::array<std::string_view, 2> requested = {"mk_a", "mk_c"};
+  const FailureOr<PreparationResult> result =
+      prepare_image_best_effort(original_, target, requested, error_);
+  ASSERT_TRUE(result.succeeded()) << error_.message;
+  ASSERT_TRUE(result.value().artifact);
+  ASSERT_EQ(result.value().entries.size(), 2u);
+  EXPECT_EQ(result.value().original.sha256, digest(original_));
+  EXPECT_TRUE(result.value().entries[0].instrumented);
+  EXPECT_EQ(result.value().entries[0].reason.code, InputErrorCode::None);
+  EXPECT_FALSE(result.value().entries[1].instrumented);
+  EXPECT_EQ(result.value().entries[1].reason.code, InputErrorCode::UnsupportedInstruction);
+  EXPECT_TRUE(result.value().entries[1].reason.text_offset);
+  EXPECT_NE(result.value().entries[1].reason.message.find("v_xor_b32"), std::string::npos);
+  const std::array<std::string_view, 1> supported = {"mk_a"};
+  const FailureOr<PreparedImageArtifact> strict =
+      prepare_image(original_, target, supported, error_);
+  ASSERT_TRUE(strict.succeeded()) << error_.message;
+  EXPECT_EQ(result.value().artifact->image, strict.value().image);
+  EXPECT_EQ(result.value().artifact->facts, strict.value().facts);
+  util::StringDiagnostic diagnostic;
+  EXPECT_TRUE(verify_artifact_images(result.value().artifact->facts, original_,
+                                     result.value().artifact->image, diagnostic.emitter())
+                  .succeeded())
+      << diagnostic.message();
+  EXPECT_EQ(util::Logger::group_name(util::Logger::GROUP_CONSAN), "CONSAN");
+}
+
+TEST_F(ConSanPrepareCoverage, AllUnsupportedRetainsOriginalIdentityWithoutInventingFacts) {
+  const std::array<std::string_view, 1> requested = {"mk_c"};
+  const FailureOr<PreparationResult> result =
+      prepare_image_best_effort(original_, *target_profile("gfx1250"), requested, error_);
+  ASSERT_TRUE(result.succeeded()) << error_.message;
+  EXPECT_FALSE(result.value().artifact);
+  EXPECT_EQ(result.value().original.sha256, digest(original_));
+  EXPECT_EQ(result.value().original.bytes, original_.size());
+  ASSERT_EQ(result.value().entries.size(), 1u);
+  EXPECT_EQ(result.value().entries[0].entry, "mk_c");
+  EXPECT_FALSE(result.value().entries[0].instrumented);
+  const std::string report = render_preparation_report(result.value());
+  EXPECT_NE(report.find("\"outcome\":\"native_only\""), std::string::npos);
+  EXPECT_NE(report.find("\"requested_coverage\":\"not_performed\""), std::string::npos);
+}
+
+TEST_F(ConSanPrepareCoverage, InvalidSelectionAndImageNeverBecomeOrdinarySkips) {
+  const TargetProfile &target = *target_profile("gfx1250");
+  const std::array<std::string_view, 2> duplicate = {"mk_a", "mk_a"};
+  const std::array<std::string_view, 2> missing = {"mk_c", "missing"};
+  EXPECT_TRUE(prepare_image_best_effort(original_, target, {}, error_).failed());
+  EXPECT_TRUE(prepare_image_best_effort(original_, target, duplicate, error_).failed());
+  EXPECT_TRUE(prepare_image_best_effort(original_, target, missing, error_).failed());
+  const std::array<std::string_view, 1> requested = {"mk_c"};
+  EXPECT_TRUE(prepare_image_best_effort({}, target, requested, error_).failed());
+  EXPECT_EQ(error_.code, InputErrorCode::InvalidImage);
+}
+#endif
+
+#ifdef CONSAN_MULTI_ENTRY_NATIVE_GLOBAL_FIXTURE
+TEST(ConSanPrepareCoverageFailures, FailedNativePreservationCannotBecomeAnUnsupportedSkip) {
+  const std::vector<uint8_t> original =
+      test::read_fixture(CONSAN_MULTI_ENTRY_NATIVE_GLOBAL_FIXTURE);
+  ASSERT_FALSE(original.empty());
+  const std::array<std::string_view, 2> requested = {"mk_a", "mk_b"};
+  InputError error;
+  const FailureOr<PreparationResult> result =
+      prepare_image_best_effort(original, *target_profile("gfx1250"), requested, error);
+  EXPECT_TRUE(result.failed());
+  EXPECT_EQ(error.code, InputErrorCode::UnsupportedInstruction);
+  EXPECT_NE(error.message.find("native entry 'mk_c' reads PC"), std::string::npos);
 }
 #endif
 

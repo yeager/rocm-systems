@@ -77,6 +77,36 @@ The three-stage split has three purposes:
 
 ### Offline preparation
 
+`rj_consan_prepare` qualifies requested entries independently. An unsupported
+entry remains native and uncovered; other qualified entries can still be
+instrumented in the same image. `preparation.json` records the original image
+SHA256, requested scope, exact requested entries, instrumented/skipped counts,
+and each skipped entry's reason code, instruction offset when available, and
+diagnostic. Its `requested_coverage` describes only the explicit request, not
+whole-application coverage. Invalid input images, unknown or duplicate entry
+names, exhausted budgets, and failed binary rewriting remain errors.
+
+When every requested entry is unsupported, preparation succeeds with an
+explicit `native_only` outcome and preserves the exact original bytes as
+`original.hsaco`. The directory contains `preparation.json`, but no
+`prepared.hsaco`, `facts.bin`, or `ready` marker. Configure that original image
+through `RJ_CONSAN_NATIVE_IMAGES` in application mode; it is not a selected
+artifact and produces no selected-execution capture or LDS verdict. Preparation
+does not silently construct empty facts to represent analysis that never ran.
+
+Use `--require-all` when a test or workflow requires every requested entry to
+be instrumented. A skipped entry then fails preparation before publishing an
+artifact. The strict C++ `prepare_image()` API retains its existing behavior;
+`prepare_image_best_effort()` returns the owning coverage report and optional
+artifact. Binary rewriting and preservation validation use the same strict
+implementation for all entries that pass qualification.
+
+Coverage degradation emits one warning summary, including with the default
+log-groups-OFF build. Per-entry qualification details use the compile-time
+`CONSAN` log group (`-DRJ_LOG_GROUPS=CONSAN`); the structured report is always
+written regardless of logging configuration. Intentionally unrequested entries
+do not count as skipped and do not generate degradation warnings.
+
 The compiler inventories the exact original image, qualifies each selected entry,
 and plans its probes, bootstrap and resources. One transactional rewrite produces
 a coherent replacement that preserves unselected native entries. Its

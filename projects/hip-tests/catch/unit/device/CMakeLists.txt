@@ -147,7 +147,6 @@ if(UNIX)
   set_source_files_properties(hipCpuAffinity_exe.cc PROPERTIES LANGUAGE ${GPGPU_LANGUAGE})
   target_link_libraries(hipCpuAffinity ${GPGPU_LINKER_LIBRARIES})
   add_dependencies(DeviceTest hipCpuAffinity)
-  set_property(GLOBAL APPEND PROPERTY G_INSTALL_EXE_TARGETS hipCpuAffinity)
 endif()
 
 if(HIP_PLATFORM MATCHES "amd" AND BUILD_SHARED_LIBS AND UNIX)

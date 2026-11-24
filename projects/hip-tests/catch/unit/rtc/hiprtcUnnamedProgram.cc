@@ -41,11 +41,25 @@ HIP_TEST_CASE(Unit_hiprtcCreateProgram_UnnamedLeavesCwdUntouched) {
   REQUIRE(getcwd(oldCwd, sizeof(oldCwd)) != nullptr);
   char dir[] = "/tmp/hiprtc_unnamed_XXXXXX";
   REQUIRE(mkdtemp(dir) != nullptr);
+
+  // RAII guard: restore the original working directory and remove the temp dir
+  // even when a REQUIRE or HIPRTC_CHECK assertion unwinds the stack.
+  struct Cleanup {
+    const char* oldCwd;
+    const char* dir;
+    int fd = -1;
+    ~Cleanup() {
+      if (fd >= 0) close(fd);
+      (void)chdir(oldCwd);
+      rmdir(dir);
+    }
+  } cleanup{oldCwd, dir};
+
   REQUIRE(chdir(dir) == 0);
 
-  const int fd = inotify_init1(IN_NONBLOCK);
-  REQUIRE(fd >= 0);
-  REQUIRE(inotify_add_watch(fd, dir, IN_CREATE) >= 0);
+  cleanup.fd = inotify_init1(IN_NONBLOCK);
+  REQUIRE(cleanup.fd >= 0);
+  REQUIRE(inotify_add_watch(cleanup.fd, dir, IN_CREATE) >= 0);
 
   static constexpr const char* kSource = R"(extern "C" __global__ void k(int* a) { a[0] = 1; })";
   hiprtcProgram programs[2] = {};
@@ -59,10 +73,9 @@ HIP_TEST_CASE(Unit_hiprtcCreateProgram_UnnamedLeavesCwdUntouched) {
   }
 
   alignas(inotify_event) char events[4096];
-  const ssize_t bytes = read(fd, events, sizeof(events));
-  close(fd);
+  const ssize_t bytes = read(cleanup.fd, events, sizeof(events));
+  // fd and dir are released by ~Cleanup; restore cwd before the final REQUIRE.
   REQUIRE(chdir(oldCwd) == 0);
-  rmdir(dir);
 
   INFO("inotify read " << bytes << " bytes of IN_CREATE events in the current directory");
   REQUIRE(bytes <= 0);

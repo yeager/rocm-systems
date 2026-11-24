@@ -434,6 +434,15 @@ HIP_TEST_CASE(Unit_hipPointerGetAttribute_DevicePointer_PeerAccess) {
   constexpr size_t kBytes = 4096;
 
   SECTION("no peer access: DEVICE_POINTER returns hipErrorInvalidValue") {
+    // Ensure peer access is not active so this section runs in a known state.
+    // A prior test in the same executable may have enabled device 0 -> 1 access.
+    HIP_CHECK(hipSetDevice(0));
+    int peer_was_enabled = 0;
+    hipDeviceCanAccessPeer(&peer_was_enabled, 0, 1);
+    if (peer_was_enabled) {
+      HIP_CHECK(hipDeviceDisablePeerAccess(1));
+    }
+
     // Allocate on device 1, query from device 0 without any prior grant.
     HIP_CHECK(hipSetDevice(1));
     int* dev1_ptr = nullptr;
@@ -448,6 +457,12 @@ HIP_TEST_CASE(Unit_hipPointerGetAttribute_DevicePointer_PeerAccess) {
 
     HIP_CHECK(hipSetDevice(1));
     HIP_CHECK(hipFree(dev1_ptr));
+
+    // Restore peer access if it was enabled before this section.
+    if (peer_was_enabled) {
+      HIP_CHECK(hipSetDevice(0));
+      HIP_CHECK(hipDeviceEnablePeerAccess(1, 0));
+    }
   }
 
   SECTION("after granting copy: DEVICE_POINTER returns hipSuccess") {

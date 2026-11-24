@@ -1348,7 +1348,11 @@ static __global__ void copy_value(const int* in, int* out) { *out = *in; }
 HIP_TEST_CASE(Unit_hipGraphAddChildGraphNode_DependentsWaitForChild) {
   constexpr int kValue = 42;
   int clock_khz = 0;
+#if HT_AMD
   HIP_CHECK(hipDeviceGetAttribute(&clock_khz, hipDeviceAttributeWallClockRate, 0));
+#else
+  HIP_CHECK(hipDeviceGetAttribute(&clock_khz, hipDeviceAttributeClockRate, 0));
+#endif
   long long ticks = static_cast<long long>(clock_khz) * 20;  // 20 ms
   // Host memory, read right after the launch stream is synchronized
   int* data = nullptr;
@@ -1373,7 +1377,11 @@ HIP_TEST_CASE(Unit_hipGraphAddChildGraphNode_DependentsWaitForChild) {
   HIP_CHECK(hipGraphCreate(&leaf_child_graph, 0));
   hipGraphNode_t empty_node;
   HIP_CHECK(hipGraphAddEmptyNode(&empty_node, leaf_child_graph, nullptr, 0));
-  HIP_CHECK(hipGraphAddKernelNode(&store_node, leaf_child_graph, nullptr, 0, &store_params));
+  // The store node must depend on the empty node: empty_node -> store_node.
+  // Without this dependency they are independent roots and the scheduler may
+  // assign the store to whichever stream it prefers, defeating the leaf-child
+  // topology this case is meant to exercise.
+  HIP_CHECK(hipGraphAddKernelNode(&store_node, leaf_child_graph, &empty_node, 1, &store_params));
 
   auto run = [&](bool child_is_leaf) {
     std::fill(data, data + 3, 0);

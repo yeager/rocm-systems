@@ -420,8 +420,14 @@ static void MipmappedArrayLevelRoundTrip(const hipChannelFormatDesc& desc) {
   constexpr size_t kSize = 64;
   constexpr unsigned int kLevels = 3;
   hipMipmappedArray_t array;
-  HIP_CHECK(hipMallocMipmappedArray(&array, &desc, make_hipExtent(kSize, kSize, 0), kLevels,
-                                    hipArrayDefault));
+  // hipErrorNotSupported covers cases where image support is present but mipmapped
+  // arrays are disabled (e.g. GPU_MIPMAP=0). Skip the test rather than failing.
+  const hipError_t alloc_err = hipMallocMipmappedArray(
+      &array, &desc, make_hipExtent(kSize, kSize, 0), kLevels, hipArrayDefault);
+  if (alloc_err == hipErrorNotSupported) {
+    HIP_SKIP_TEST("hipMallocMipmappedArray: mipmapped arrays not supported on this device");
+  }
+  HIP_CHECK(alloc_err);
   for (unsigned int level = 0; level < kLevels; ++level) {
     INFO("level " << level);
     hipArray_t level_array;

@@ -1310,10 +1310,17 @@ HIP_TEST_CASE(Unit_hipGraphAddChildGraphNode_ChildNodesRunOncePerLaunch) {
 // Waits `ticks` wall clock ticks, then stores `value`, so work that doesn't wait for it reads
 // the old value.
 static __global__ void delayed_store(int* out, int value, long long ticks) {
+#if HT_AMD
   const long long start = wall_clock64();
   while (wall_clock64() - start < ticks) {
   }
   __hip_atomic_store(out, value, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+#else
+  const long long start = clock64();
+  while (clock64() - start < ticks) {
+  }
+  atomicExch(out, value);
+#endif
 }
 
 static __global__ void copy_value(const int* in, int* out) { *out = *in; }

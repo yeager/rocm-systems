@@ -100,6 +100,8 @@ if(UNIX AND BUILD_SHARED_LIBS)
                                 LANGUAGE ${GPGPU_LANGUAGE})
     target_link_libraries(hipDispatchTableReentry_exe ${GPGPU_LINKER_LIBRARIES} ${CMAKE_DL_LIBS})
     add_dependencies(dynamicLoading dispatchTableReentryTool hipDispatchTableReentry_exe)
+    add_dependencies(build_tests dispatchTableReentryTool hipDispatchTableReentry_exe)
+    set_property(GLOBAL APPEND PROPERTY G_INSTALL_EXE_TARGETS hipDispatchTableReentry_exe)
     set_property(GLOBAL APPEND PROPERTY G_INSTALL_CUSTOM_TARGETS
                  ${CMAKE_CURRENT_BINARY_DIR}/libdispatchTableReentryTool.so)
   endif()

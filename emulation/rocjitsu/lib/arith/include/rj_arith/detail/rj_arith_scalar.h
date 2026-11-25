@@ -346,6 +346,10 @@ int rj_arith_s_cmp_eq_u64(uint64_t flags, uint64_t instruction_flags, uint32_t *
 int rj_arith_s_cmp_lg_u64(uint64_t flags, uint64_t instruction_flags, uint32_t *scc, uint64_t a,
                           uint64_t b);
 
+// Scalar FP comparisons ignore EXEC. Mode 3 and Compatibility require valid
+// excp_flag_user storage and accumulate inherited gfx12 input classification.
+// Other semantics leave that storage unused. SCC is a required result in every mode.
+
 // SCC is a < b.
 int rj_arith_s_cmp_lt_f32(uint64_t flags, uint64_t instruction_flags, uint32_t *scc, uint32_t a,
                           uint32_t b, uint32_t *excp_flag_user);
@@ -461,7 +465,11 @@ int rj_arith_s_cmp_nlt_f16(uint64_t flags, uint64_t instruction_flags, uint32_t 
 // Scalar conversions execute once per wave and ignore EXEC, including zero;
 // d is required and SCC is unchanged. Operands are raw register bits. Sources
 // may originate from d storage. instruction_flags must be zero. Loose and exact
-// semantics are supported; mode 3 FP status reporting is unsupported. Integer-to-FP32
+// semantics are supported; explicit mode 3 reporting is unsupported. Compatibility
+// requires valid excp_flag_user storage and accumulates gfx12 conversion causes matching
+// gfx1201 captures, with OVERFLOW and UNDERFLOW judged after rounding with an unbounded
+// exponent; RTZ packing leaves the status pointer unused.
+// Integer-to-FP32
 // and FP32-to-FP16 accept RJ_ARITH_FP_ROUND_MASK (the destination format's MODE
 // field). Errors leave d unchanged. Requires host nearest-even rounding and enabled
 // denormals; preserves host rounding but may change exception flags.
@@ -511,9 +519,9 @@ int rj_arith_s_cvt_pk_rtz_f16_f32(uint64_t flags, uint64_t instruction_flags, ui
 // be zero. Guest input flushing applies; output flushing and FP16_OVFL have no
 // effect. Preserves all host FP state and SCC, independently of host rounding.
 // Inputs may originate from d storage. Errors leave d unchanged.
-// Exact mode with non-NULL excp_flag_user accumulates INVALID for signaling NaNs
-// and INPUT_DENORM for preserved subnormals. Discarding a fractional part does
-// not raise INEXACT. Loose mode leaves excp_flag_user unchanged.
+// Mode 3 and Compatibility require valid excp_flag_user storage and accumulate INVALID for
+// signaling NaNs and INPUT_DENORM for preserved subnormals. Discarding a fractional part does not
+// raise INEXACT. Loose mode leaves excp_flag_user unchanged.
 
 // Round to an integral value toward positive infinity.
 int rj_arith_s_ceil_f32(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
@@ -551,7 +559,12 @@ int rj_arith_s_rndne_f16(uint64_t flags, uint64_t instruction_flags, uint32_t *d
 // Operands and literals are raw IEEE bits. FP16 reads low halves and writes a
 // zero upper half. Rounds once to the destination format. SCC is unchanged.
 // instruction_flags must be zero. FP32 and FP16 support loose and exact semantics;
-// mode 3 FP status reporting is unsupported. Loose NaN signs/payloads are
+// explicit mode 3 reporting is unsupported. Compatibility accumulates the gfx12 scalar FMA
+// causes into required excp_flag_user storage, judging overflow and tininess after rounding
+// the significand with the guest rounding mode and an unbounded exponent, as ADD and MUL do
+// (fp/rounding_status.h). A result stored as the minimum normal therefore still reports
+// UNDERFLOW when that rounding stays below it: at MODE 0xfa s_fmac_f32 stores 0x80800000 and
+// reports UNDERFLOW. Loose NaN signs/payloads are
 // unspecified. Exact results follow the borrowed FMA NaN ordering. Guest
 // input/output flushing, FP16_OVFL and RJ_ARITH_FP_ROUND_MASK (the destination
 // format's MODE field) are supported, with tininess detected before destination
@@ -584,7 +597,12 @@ int rj_arith_s_fmamk_f32(uint64_t flags, uint64_t instruction_flags, uint32_t *d
 // to add/subtract/multiply; min/max ignore it. FP16_OVFL saturates finite FP16
 // overflow. Multiplication flushes tiny results before destination subnormal
 // rounding, so a value that would round up to the smallest normal may flush.
-// Loose and exact semantics are supported; mode 3 FP status reporting is unsupported.
+// Loose and exact semantics are supported; explicit mode 3 reporting is unsupported.
+// Compatibility requires valid excp_flag_user storage and accumulates gfx12 scalar
+// arithmetic/selection causes matching gfx1201 captures in every MODE: OVERFLOW and
+// UNDERFLOW are judged after rounding with the guest rounding mode and an unbounded
+// exponent, so a result stored as the minimum normal still underflows when that rounding
+// stays below it. Modes 0–2 leave status unused.
 // Add/subtract/multiply accept RJ_ARITH_FP_ROUND_MASK (the destination format's MODE
 // field). Exact results equal FMA(a, 1, b), FMA(a, 1, -b) and FMA(a, b, signed zero),
 // so subtraction negates a NaN b. A NaN selection result is the first NaN operand,
@@ -1013,8 +1031,9 @@ int rj_arith_s_ff0_i32_b64(uint64_t flags, uint64_t instruction_flags, uint32_t 
 // of EXEC, including zero. a is a scalar value; d must always be writable.
 // FP16 reads a's low half, ignores its high half, and zeros d's upper half.
 // Supports ABS_A, NEG_A, OMOD and CLAMP, with ABS before NEG. No half selectors.
-// All FP32 operations and FP16 RCP/RSQ/SQRT support empirical-exact semantics.
-// FP16 EXP/LOG remain loose-only.
+// Every operation supports empirical-exact semantics and Compatibility resolves to
+// mode 2; FP16 EXP/LOG use the VALU EXP/LOG F16 model, which matches the gfx1201
+// V_S_EXP_F16/V_S_LOG_F16 captures (FP16_OVFL saturation, OMOD and CLAMP included).
 // Mode 3 FP status reporting is unsupported. Loose calls leave state unchanged.
 // FP32 always flushes input/output denormals. FP16 follows the guest input/output
 // flush flags and FP16_OVFL. Rounding precedes OMOD; nonzero OMOD flushes tiny
@@ -1216,6 +1235,101 @@ int rj_arith_v_s_sqrt_f16_gfx1250(uint64_t flags, uint64_t instruction_flags, ui
                                   uint32_t a, uint32_t *excp_flag_user);
 int rj_arith_v_s_sqrt_f32_gfx1250(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
                                   uint32_t a, uint32_t *excp_flag_user);
+
+// gfx1150 scalar FP inherits the existing Rocjitsu software model. Guest IEEE controls
+// NaN quieting where applicable; narrowing always quiets. MIN/MAX use legacy selection.
+// Compatibility accumulates FP status, Loose/allow-Loose may omit it. Strict empirical modes are
+// not qualified. Arithmetic/conversions accept guest rounding where their destination rounds; all
+// forms accept guest denormal controls. FP16 overflow saturation follows MODE.
+int rj_arith_s_add_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_sub_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_mul_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_min_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_max_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_add_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_sub_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_mul_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_min_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_max_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                               uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_fmac_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                                uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_fmac_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                                uint32_t b, uint32_t *fp_status);
+
+int rj_arith_s_fmaak_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t b, uint32_t c, uint32_t *fp_status);
+
+int rj_arith_s_fmamk_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t b, uint32_t c, uint32_t *fp_status);
+
+int rj_arith_s_ceil_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                                uint32_t *fp_status);
+
+int rj_arith_s_floor_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_trunc_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_rndne_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_ceil_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d, uint32_t a,
+                                uint32_t *fp_status);
+
+int rj_arith_s_floor_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_trunc_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_rndne_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                 uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_f32_i32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_f32_u32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_i32_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_u32_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_f16_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_f32_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                   uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_hi_f32_f16_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                      uint32_t a, uint32_t *fp_status);
+
+int rj_arith_s_cvt_pk_rtz_f16_f32_gfx1150(uint64_t flags, uint64_t instruction_flags, uint32_t *d,
+                                          uint32_t a, uint32_t b, uint32_t *fp_status);
 
 #ifdef __cplusplus
 } // extern "C"

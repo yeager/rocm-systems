@@ -7,6 +7,8 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 
 ### Added
 
+* `--trace-ml-api triton` records each kernel's operands on the operator call tree. Tensor entries use dtype and shape. Scalars use their values. Launch settings such as grid, stream, and num_warps are omitted.
+
 ### Changed
 
 ### Removed

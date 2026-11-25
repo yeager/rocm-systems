@@ -19,6 +19,9 @@ namespace {
 template <int Bits, int K, int WaveSize = 32>
 int swmmac(uint64_t flags, uint32_t mode, uint32_t *const *d, const uint32_t *const *a,
            const uint32_t *const *b, const uint32_t *const *index) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   const uint32_t known = RJ_ARITH_WMMA_SIGNED_A | RJ_ARITH_WMMA_SIGNED_B | RJ_ARITH_WMMA_CLAMP |
                          rocjitsu::arith::SwmmacIndex<Bits, K, WaveSize>::mask;
   if (int error = rocjitsu::arith::validate(flags, mode & ~known)) {

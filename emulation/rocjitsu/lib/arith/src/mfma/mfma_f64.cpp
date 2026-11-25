@@ -13,6 +13,9 @@ template <int M, int Batch>
 int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32_t *const *a,
              const uint32_t *const *b, const uint32_t *const *c) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error =
           validate(flags, controls & ~7ULL, kMatrixIgnoredFpFlags | RJ_ARITH_FP_DX10_CLAMP_OFF)) {

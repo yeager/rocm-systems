@@ -16,6 +16,9 @@ template <int K, bool Bf8A, bool Bf8B, bool Packed>
 int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32_t *const *a,
              const uint32_t *const *b, const uint32_t *const *c) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   const bool compatibility = (flags & RJ_ARITH_SEMANTICS_MASK) == RJ_ARITH_SEMANTICS_COMPATIBILITY;
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error = validate(

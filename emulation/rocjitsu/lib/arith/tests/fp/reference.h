@@ -129,7 +129,7 @@ inline double modified_fp(double value, uint64_t instruction_flags, int operand)
 // Universal early-rejection contract, without an inventory of entry points or
 // their modifier capabilities. The caller checks all operand/status storage.
 template <typename Call> void expect_invalid_fp_requests(Call call) {
-  for (int semantics = 4; semantics <= 6; ++semantics) {
+  for (int semantics = 5; semantics <= 6; ++semantics) {
     EXPECT_EQ(call(uint64_t(semantics) << 16, 0), RJ_ARITH_ERROR_INVALID_FLAGS);
   }
   EXPECT_EQ(call(1ULL << 63, 0), RJ_ARITH_ERROR_INVALID_FLAGS);

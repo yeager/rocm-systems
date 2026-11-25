@@ -31,18 +31,21 @@ constexpr uint64_t RJ_ARITH_CPU_X86_64_ZEN4 = 3ULL;
 constexpr uint64_t RJ_ARITH_CPU_FEATURES_MASK = 0xfff0ULL;
 
 // Semantics form an ordered enumeration, not independently OR-able bits.
-// Mode 0 is loose. Mode 1 prefers exact results but permits loose fallback.
-// Mode 2 requires exact results. Mode 3 additionally requires FP status reporting.
-// Modes 0 through 2 never access FP status outputs. Values 4 through 6 are reserved.
+// Mode 0 is no-op for matrix arithmetic: return success without changing output
+// storage. Other instructions may still perform arithmetic.
+// Mode 1 is loose. Mode 2 prefers exact results but permits loose fallback.
+// Mode 3 requires exact results. Mode 4 additionally requires FP status reporting.
+// Modes 0 through 3 never access FP status outputs. Values 5 through 6 are reserved.
 // Temporary migration mode 7 is outside this ordering: each instruction resolves
 // it to the behavior closest to old rocjitsu. Compatibility FP status follows
 // each instruction family's declaration, independently of its numeric mode;
 // supply valid storage whenever that family reports status.
 constexpr uint64_t RJ_ARITH_SEMANTICS_MASK = 7ULL << 16;
-constexpr uint64_t RJ_ARITH_SEMANTICS_LOOSE = 0ULL;
-constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_ALLOW_LOOSE = 1ULL << 16;
-constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_NO_FP_STATUS = 2ULL << 16;
-constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL = 3ULL << 16;
+constexpr uint64_t RJ_ARITH_SEMANTICS_NOP = 0ULL;
+constexpr uint64_t RJ_ARITH_SEMANTICS_LOOSE = 1ULL << 16;
+constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_ALLOW_LOOSE = 2ULL << 16;
+constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_NO_FP_STATUS = 3ULL << 16;
+constexpr uint64_t RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL = 4ULL << 16;
 constexpr uint64_t RJ_ARITH_SEMANTICS_COMPATIBILITY = 7ULL << 16;
 
 // Guest MODE.FP16_OVFL. Availability and effects, including saturation of
@@ -107,19 +110,19 @@ constexpr int RJ_ARITH_ERROR_UNSUPPORTED_FP_STATUS = 3;
 
 // EXEC-dependent Wave32 entry points use a 32-bit exec_mask (Wave64 uses 64 bits).
 // Scalar, pseudo-scalar, WMMA and SWMMAC instructions ignore EXEC and omit exec_mask.
-// Matrix instructions read and write all lanes. Each _w32 VGPR pointer names 32
-// contiguous uint32_t lane words; each _w64 pointer names 64. Pointer arrays and
-// backing storage must be valid.
+// Except in Nop mode, matrix instructions read and write all lanes. Each _w32
+// VGPR pointer names 32 contiguous uint32_t lane words; each _w64 pointer names
+// 64. Pointer arrays and backing storage must be valid.
 // Whole VGPRs may alias; distinct VGPR addresses must not overlap. Sources are
 // conceptually read before writes. Inactive destination lanes and all destinations
 // on error are unchanged. Arithmetic assumes the default host FP environment:
 // nearest-even rounding, denormals enabled, and exceptions masked. Implementations
 // never explicitly modify host FP state; ordinary arithmetic may raise sticky flags.
 
-// FP status outputs are appended to the operand list. Modes 0 through 2 do not
+// FP status outputs are appended to the operand list. Modes 0 through 3 do not
 // access these pointers: null is allowed and supplied storage remains unchanged.
-// Mode 3 requires valid storage. Compatibility follows the instruction-family
-// status contract, which may require storage even when its numeric mode is 2.
+// Mode 4 requires valid storage. Compatibility follows the instruction-family
+// status contract, which may require storage even when its numeric mode is 3.
 // Entry points assume required storage is valid; they do not check nullness.
 // trapsts (RDNA3) or excp_flag_user (RDNA4) accumulates participating-lane FP
 // exception causes with bitwise OR, preserving all existing bits. Status storage
@@ -128,8 +131,9 @@ constexpr int RJ_ARITH_ERROR_UNSUPPORTED_FP_STATUS = 3;
 // Required numeric semantics that are unavailable return UNSUPPORTED_SEMANTICS;
 // required FP status reporting that is unavailable returns UNSUPPORTED_FP_STATUS.
 // Reserved semantics values are invalid and rejected before operand access.
-// Ordinary results, including comparison masks and SCC, are required in every
-// mode. Explicit register writes and non-FP side effects have separate contracts.
+// Except for matrix arithmetic skipped by Nop, ordinary results, including
+// comparison masks and SCC, are required in every mode. Explicit register writes
+// and non-FP side effects have separate contracts.
 
 // DPP8 permutes source A within each group of eight lanes before arithmetic
 // modifiers. Pack eight 3-bit lane indices into bits 40..63, index 0 first, and

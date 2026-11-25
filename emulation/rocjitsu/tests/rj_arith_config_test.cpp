@@ -65,7 +65,7 @@ TEST_F(ArithConfigTest, DefaultsAndTopLevelPolicyReachExecution) {
 TEST_F(ArithConfigTest, EveryModeAndEmptyObjectReachExecution) {
   for (const auto *name :
        {"loose", "bit_exact_empirical_allow_loose", "bit_exact_empirical_no_fp_status",
-        "bit_exact_empirical", "compatibility"}) {
+        "bit_exact_empirical", "nop", "compatibility"}) {
     const std::string policy = std::string("{\"semantics\":\"") + name + "\"}";
     config::LoadedConfig loaded;
     ASSERT_TRUE(test::load_valid_config_from_string(arithmetic_config(policy), loaded));

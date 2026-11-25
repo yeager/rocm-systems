@@ -21,6 +21,9 @@ namespace {
 template <bool Bf16, int Lanes, bool Packed = false>
 int wmma(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d, const uint32_t *const *a,
          const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   if (int error = rocjitsu::arith::validate(
           flags,
           instruction_flags & ~uint64_t(rocjitsu::arith::kWmmaInstructionFlags |
@@ -177,6 +180,9 @@ void integer_wmma_scalar(uint64_t instruction_flags, uint32_t *const *d, const u
 template <int Bits, int Lanes>
 int integer_wmma(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d,
                  const uint32_t *const *a, const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   if (instruction_flags &
       ~(uint64_t(RJ_ARITH_WMMA_SIGNED_A | RJ_ARITH_WMMA_SIGNED_B | RJ_ARITH_WMMA_CLAMP))) {
     return RJ_ARITH_ERROR_INVALID_FLAGS;

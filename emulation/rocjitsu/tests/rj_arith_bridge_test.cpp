@@ -891,7 +891,7 @@ TEST(ArithBridgeTest, FloatFrexpExponentIgnoresGuestRounding) {
   EXPECT_EQ(fixture.cu->read_vgpr(fixture.base() + 1, 0), 1U);
 }
 
-// Compatibility uses the legacy classifier even outside mode 3's reporting domain.
+// Compatibility uses the legacy classifier even outside mode 4's reporting domain.
 // Suppressed MUL lanes contribute range causes, but not gfx12 INVALID causes.
 
 TEST(ArithBridgeTest, CompatibilityMulDppSuppressesInvalid) {
@@ -11067,7 +11067,7 @@ TEST(ArithBridgeTest, DualSecondSlotRejectionCommitsNeitherResultNorState) {
     fixture.wave->set_exec(0xffffffff);
     fixture.wave->set_trapsts(0x20);
     // MOV succeeds on gfx11; gfx12 MUL can report overflow/inexact.
-    // MIN rejects mode 3 because it has no FP-status implementation.
+    // MIN rejects mode 4 because it has no FP-status implementation.
     const std::array<uint32_t, 2> words = {(0x32U << 26) | ((rdna3 ? 8U : 3U) << 22) | (11U << 17) |
                                                (1U << 9) | 256U,
                                            (6U << 24) | (3U << 17) | (3U << 9) | 258U};

@@ -20,6 +20,9 @@ int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32
   constexpr bool Bf16 = Form != Wmma1250Form::F32F16 && Form != Wmma1250Form::F16;
   constexpr bool PackedC = Form == Wmma1250Form::F16 || Form == Wmma1250Form::Bf16;
   constexpr bool DotFirst = Bf16 && !PackedC;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   const bool compatibility = (flags & RJ_ARITH_SEMANTICS_MASK) == RJ_ARITH_SEMANTICS_COMPATIBILITY;
   const uint64_t packing_flags = flags;
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);

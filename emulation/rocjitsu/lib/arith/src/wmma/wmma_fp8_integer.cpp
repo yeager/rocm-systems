@@ -59,6 +59,9 @@ void store(uint32_t *const *d, const uint32_t (&result)[8][32]) {
 template <bool Bf8A, bool Bf8B>
 int floating(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d,
              const uint32_t *const *a, const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   // Captured C ABS/NEG bits are ignored aliases. A/B instruction_flags remain unsupported.
   if (int error = rocjitsu::arith::validate(
           flags, instruction_flags & ~uint64_t(RJ_ARITH_WMMA_NEG_C | RJ_ARITH_WMMA_ABS_C),
@@ -138,6 +141,9 @@ int floating(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d,
 template <bool Bf8A, bool Bf8B>
 int floating_wave64(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d,
                     const uint32_t *const *a, const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   if (int error = rocjitsu::arith::validate(
           flags, instruction_flags & ~uint64_t(RJ_ARITH_WMMA_NEG_C | RJ_ARITH_WMMA_ABS_C),
           rocjitsu::arith::kMatrixIgnoredFpFlags)) {
@@ -152,6 +158,9 @@ int floating_wave64(uint64_t flags, uint64_t instruction_flags, uint32_t *const 
 template <int Bits, int K>
 int integer(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d,
             const uint32_t *const *a, const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   if (int error = rocjitsu::arith::validate(
           flags, instruction_flags & ~uint64_t(RJ_ARITH_WMMA_SIGNED_A | RJ_ARITH_WMMA_SIGNED_B |
                                                RJ_ARITH_WMMA_CLAMP))) {

@@ -22,6 +22,10 @@ namespace {
 template <bool Bf16, int WaveSize = 32, bool Packed = false>
 int wmma(uint64_t flags, uint64_t instruction_flags, uint32_t *const *d, const uint32_t *const *a,
          const uint32_t *const *b, const uint32_t *const *c) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
+
   if (int error = rocjitsu::arith::validate(
           flags, instruction_flags & ~uint64_t(rocjitsu::arith::kWmmaInstructionFlags),
           rocjitsu::arith::kMatrixIgnoredFpFlags)) {

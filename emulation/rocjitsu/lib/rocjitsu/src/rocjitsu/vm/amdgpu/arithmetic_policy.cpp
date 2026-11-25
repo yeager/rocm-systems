@@ -10,6 +10,7 @@
 namespace rocjitsu::amdgpu {
 namespace {
 
+static_assert((uint64_t(ArithmeticSemantics::Nop) << 16) == RJ_ARITH_SEMANTICS_NOP);
 static_assert((uint64_t(ArithmeticSemantics::Loose) << 16) == RJ_ARITH_SEMANTICS_LOOSE);
 static_assert((uint64_t(ArithmeticSemantics::BitExactEmpiricalAllowLoose) << 16) ==
               RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_ALLOW_LOOSE);
@@ -31,9 +32,10 @@ uint64_t detected_cpu_flags() {
 } // namespace
 
 util::FailureOr<ArithmeticPolicy> parse_arithmetic_policy(std::string_view semantics) {
-  for (auto mode : {ArithmeticSemantics::Loose, ArithmeticSemantics::BitExactEmpiricalAllowLoose,
-                    ArithmeticSemantics::BitExactEmpiricalNoFpStatus,
-                    ArithmeticSemantics::BitExactEmpirical, ArithmeticSemantics::Compatibility}) {
+  for (auto mode :
+       {ArithmeticSemantics::Loose, ArithmeticSemantics::BitExactEmpiricalAllowLoose,
+        ArithmeticSemantics::BitExactEmpiricalNoFpStatus, ArithmeticSemantics::BitExactEmpirical,
+        ArithmeticSemantics::Nop, ArithmeticSemantics::Compatibility}) {
     if (semantics == arithmetic_semantics_name(mode)) {
       return ArithmeticPolicy{mode};
     }
@@ -53,6 +55,8 @@ const char *arithmetic_semantics_name(ArithmeticSemantics semantics) {
     return "bit_exact_empirical_no_fp_status";
   case ArithmeticSemantics::BitExactEmpirical:
     return "bit_exact_empirical";
+  case ArithmeticSemantics::Nop:
+    return "nop";
   }
   assert(false && "invalid arithmetic semantics");
   std::abort();

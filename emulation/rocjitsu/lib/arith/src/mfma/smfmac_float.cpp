@@ -13,6 +13,9 @@ template <int M, int K, int Bits, bool BfA, bool BfB, bool Fnuz, bool Gfx942 = f
 int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32_t *const *a,
              const uint32_t *const *b, const uint32_t *const *index) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error = validate(flags, controls & ~0x7fULL,
                            kMatrixIgnoredFpFlags | RJ_ARITH_FP_DX10_CLAMP_OFF)) {

@@ -22,6 +22,9 @@ namespace {
 template <bool Bf8A, bool Bf8B, int WaveSize = 32>
 int swmmac(uint64_t flags, uint32_t mode, uint32_t *const *d, const uint32_t *const *a,
            const uint32_t *const *b, const uint32_t *const *index) {
+  if (rocjitsu::arith::is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   if (int error = rocjitsu::arith::validate(
           flags, mode & ~(rocjitsu::arith::SwmmacIndex<8, 32, WaveSize>::mask),
           rocjitsu::arith::kMatrixIgnoredFpFlags)) {

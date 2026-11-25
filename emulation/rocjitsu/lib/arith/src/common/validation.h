@@ -60,6 +60,10 @@ inline bool is_exact(uint64_t flags) {
          semantics <= RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL;
 }
 
+inline bool is_nop(uint64_t flags) {
+  return (flags & RJ_ARITH_SEMANTICS_MASK) == RJ_ARITH_SEMANTICS_NOP;
+}
+
 // Return whether resolved semantics require guest FP status reporting.
 inline bool reports_fp_status(uint64_t flags) {
   return (flags & RJ_ARITH_SEMANTICS_MASK) == RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL;
@@ -72,7 +76,7 @@ inline uint64_t without_fp_status(uint64_t flags) {
                                   : flags;
 }
 
-// Accept ordinary semantics modes 0..3; reject reserved or unresolved compatibility modes.
+// Accept ordinary semantics modes 0..4; reject reserved or unresolved compatibility modes.
 inline int validate_semantics(uint64_t flags) {
   return (flags & RJ_ARITH_SEMANTICS_MASK) > RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL
              ? RJ_ARITH_ERROR_INVALID_FLAGS
@@ -80,8 +84,8 @@ inline int validate_semantics(uint64_t flags) {
 }
 
 // Resolve Compatibility to Loose and reject exact requests for an entry point whose numeric
-// model has not been checked against its architecture's hardware. Mode 2 reports the missing
-// exactness evidence; so does mode 3 on an entry without a status operand. Mode 3 on an entry
+// model has not been checked against its architecture's hardware. Mode 3 reports the missing
+// exactness evidence; so does mode 4 on an entry without a status operand. Mode 4 on an entry
 // with a status operand passes through, so the shared entry validates the remaining controls
 // and reports the missing status model exactly as its exact-capable sibling does.
 inline int loose_only(uint64_t &flags, bool status_operand) {

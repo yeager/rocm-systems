@@ -15,6 +15,9 @@ int rj_arith_v_wmma_f32_16x16x4_f32_w32(uint64_t flags, uint64_t controls, uint3
                                         const uint32_t *const *a, const uint32_t *const *b,
                                         const uint32_t *const *c) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error = validate(flags, controls & ~uint64_t(kWmmaInstructionFlags),
                            kMatrixIgnoredFpFlags | RJ_ARITH_FP_DX10_CLAMP_OFF)) {

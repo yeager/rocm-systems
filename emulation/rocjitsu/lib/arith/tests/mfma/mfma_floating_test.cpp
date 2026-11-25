@@ -18,6 +18,30 @@ namespace {
 using namespace rocjitsu::arith::test;
 using Entry = decltype(&rj_arith_v_mfma_f32_16x16x16_f16_w64);
 
+TEST(MfmaHalf, NopPreservesDestination) {
+
+  std::array<uint32_t, 64> zeros{};
+  std::array<std::array<uint32_t, 64>, 4> destination;
+
+  const uint32_t *inputs[] = {zeros.data(), zeros.data()};
+  const uint32_t *accumulator[] = {zeros.data(), zeros.data(), zeros.data(), zeros.data()};
+  uint32_t *output[] = {destination[0].data(), destination[1].data(), destination[2].data(),
+                        destination[3].data()};
+  for (uint32_t fill_val : {0xdeadbeefU, 0x12345678U}) {
+    for (auto &reg : destination) {
+      reg.fill(fill_val);
+    }
+    const auto before = destination;
+    // Nop bypasses invalid CPU flags rejection.
+    for (uint64_t flags : {RJ_ARITH_SEMANTICS_NOP, RJ_ARITH_SEMANTICS_NOP | RJ_ARITH_CPU_MASK}) {
+      SCOPED_TRACE(flags);
+      ASSERT_EQ(rj_arith_v_mfma_f32_16x16x16_f16_w64(flags, 0, output, inputs, inputs, accumulator),
+                RJ_ARITH_SUCCESS);
+      EXPECT_EQ(destination, before);
+    }
+  }
+}
+
 // Compare a full instruction against the established approximate reduction,
 // including batched layouts and sources that overlap the destination.
 template <int M, int K, int Batch, bool Bf16, bool FullF32 = false>

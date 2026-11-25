@@ -14,6 +14,9 @@ int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32
              const uint32_t *const *b, const uint32_t *const *c,
              const uint32_t *const *scale_a = nullptr, const uint32_t *const *scale_b = nullptr) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error =
           validate(flags, controls & ~((M == 32 ? 0xc0ULL : 0xffULL) | (Block ? 0x3f00ULL : 0)),

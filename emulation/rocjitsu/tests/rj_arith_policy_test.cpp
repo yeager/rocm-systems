@@ -37,6 +37,7 @@ TEST(ArithPolicyTest, ConfigurationNamesMapDirectlyToArithSemantics) {
     const char *name;
     uint64_t mode;
   } cases[] = {
+      {"nop", RJ_ARITH_SEMANTICS_NOP},
       {"loose", RJ_ARITH_SEMANTICS_LOOSE},
       {"bit_exact_empirical_allow_loose", RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_ALLOW_LOOSE},
       {"bit_exact_empirical_no_fp_status", RJ_ARITH_SEMANTICS_BIT_EXACT_EMPIRICAL_NO_FP_STATUS},

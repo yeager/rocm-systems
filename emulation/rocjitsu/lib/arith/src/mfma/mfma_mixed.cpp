@@ -13,6 +13,9 @@ int evaluate(uint64_t flags, uint64_t controls, uint32_t *const *d, const uint32
              const uint32_t *const *b, const uint32_t *const *c, const uint32_t *scale_a = nullptr,
              const uint32_t *scale_b = nullptr) {
   using namespace rocjitsu::arith;
+  if (is_nop(flags)) {
+    return RJ_ARITH_SUCCESS;
+  }
   flags = resolve_compatibility(flags, RJ_ARITH_SEMANTICS_LOOSE);
   if (int error = validate(flags, controls & ~(Scaled ? 0xfffULL : 0x3fULL),
                            kMatrixIgnoredFpFlags | RJ_ARITH_FP_DX10_CLAMP_OFF)) {
